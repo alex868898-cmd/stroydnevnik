@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
 
 /**
- * Transcribes an audio file URI using Supabase Edge Function whisper-proxy
+ * Transcribes an audio file URI using Supabase Edge Function whisper-proxy.
+ * Reads the local audio file into a raw Blob using XMLHttpRequest (compatible with React Native).
  */
 export async function transcribeAudio(fileUri: string): Promise<string> {
   // Clean file URI for Android/iOS
@@ -10,17 +11,21 @@ export async function transcribeAudio(fileUri: string): Promise<string> {
     cleanUri = 'file://' + cleanUri;
   }
 
-  const formData = new FormData();
-  
-  // React Native FormData file attachment pattern
-  formData.append('file', {
-    uri: cleanUri,
-    type: 'audio/mp4',
-    name: 'recording.m4a',
-  } as any);
+  // Read local file as a raw Blob
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload = () => resolve(xhr.response);
+    xhr.onerror = () => reject(new Error('Cannot read file: ' + cleanUri));
+    xhr.responseType = 'blob';
+    xhr.open('GET', cleanUri);
+    xhr.send();
+  });
 
   const { data, error } = await supabase.functions.invoke('whisper-proxy', {
-    body: formData,
+    body: blob,
+    headers: {
+      'Content-Type': 'audio/m4a',
+    },
   });
 
   if (error) {
@@ -34,4 +39,5 @@ export async function transcribeAudio(fileUri: string): Promise<string> {
 
   return data.text;
 }
+
 
