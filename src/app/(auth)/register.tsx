@@ -37,6 +37,7 @@ export default function RegisterScreen() {
           data: {
             display_name: name,
           },
+          emailRedirectTo: 'stroydnevnik://',
         },
       });
 

@@ -2,7 +2,7 @@
   "expo": {
     "name": "СтройДневник",
     "slug": "stroydnevnik",
-    "owner": "sergey86",
+    "owner": "sergey86s-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -64,7 +64,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "9f65ede8-a8de-43eb-b587-6984df4d4d53"
+        "projectId": "faa110fb-7627-4e01-8bbc-54e352c9da0b"
       }
     }
   }
