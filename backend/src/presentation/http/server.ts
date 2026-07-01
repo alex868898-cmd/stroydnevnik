@@ -1,8 +1,14 @@
 import Fastify from 'fastify';
+import { ProviderRegistry } from '../../application/providers/ProviderRegistry.js';
+import { MockProviderAdapter } from '../../infrastructure/providers/mock/MockProviderAdapter.js';
 
 const fastify = Fastify({
   logger: true
 });
+
+// Initialize provider registry and register mock provider
+const providerRegistry = new ProviderRegistry();
+providerRegistry.register(new MockProviderAdapter());
 
 // GET /health
 fastify.get('/health', async (request, reply) => {
