@@ -1,0 +1,8 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:../../data/db/app.sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
