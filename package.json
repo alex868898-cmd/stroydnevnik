@@ -7,6 +7,10 @@
     "frontend"
   ],
   "scripts": {
-    "bootstrap": "npm install"
+    "bootstrap": "npm install",
+    "dev": "concurrently \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }
