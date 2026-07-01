@@ -6,3 +6,35 @@ datasource db {
 generator client {
   provider = "prisma-client-js"
 }
+
+model Job {
+  id            String          @id
+  useCase       String
+  prompt        String
+  providerId    String
+  pipelineId    String?
+  duration      Int?
+  aspectRatio   String?
+  seed          Int?
+  status        String
+  providerJobId String?
+  attempts      Int             @default(0)
+  lastError     String?
+  progress      Float?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  resultAssetId String?         @unique
+  resultAsset   AssetReference? @relation(fields: [resultAssetId], references: [id], onDelete: SetNull)
+}
+
+model AssetReference {
+  id        String   @id
+  path      String
+  mimeType  String
+  sizeBytes Int
+  kind      String
+  createdAt DateTime @default(now())
+
+  job       Job?
+}
