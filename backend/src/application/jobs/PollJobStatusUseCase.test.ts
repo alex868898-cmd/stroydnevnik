@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { Readable } from 'stream';
 import { JobRepository } from '../../domain/jobs/JobRepository.js';
 import { GenerationJob } from '../../domain/jobs/GenerationJob.js';
 import { JobStatus } from '../../domain/jobs/JobStatus.js';
@@ -7,12 +8,15 @@ import { ProviderAdapter, NormalizedProviderStatus, CancelResult } from '../../d
 import { ProviderCapabilityContract } from '../../domain/providers/ProviderCapabilityContract.js';
 import { ProviderRegistry } from '../providers/ProviderRegistry.js';
 import { ProviderError, ProviderErrorCategory } from '../../domain/providers/ProviderError.js';
+import { AssetReference } from '../../domain/assets/AssetReference.js';
+import { AssetDownloader, DownloadedAsset, DownloadedAssetValidationError } from '../../domain/assets/AssetDownloader.js';
+import { AssetStorage } from '../../domain/assets/AssetStorage.js';
+import { AssetRepository } from '../../domain/assets/AssetRepository.js';
 import { 
   PollJobStatusUseCase, 
   JobNotFoundError, 
   InvalidJobStatusError, 
   MissingProviderJobIdError,
-  SucceededStateDeferredError,
   ProviderNotFoundError
 } from './PollJobStatusUseCase.js';
 
@@ -84,6 +88,68 @@ class FakeProviderAdapter implements ProviderAdapter {
   }
 }
 
+class FakeAssetDownloader implements AssetDownloader {
+  public mockDownload?: (url: string) => Promise<DownloadedAsset>;
+
+  async download(url: string): Promise<DownloadedAsset> {
+    if (this.mockDownload) {
+      return this.mockDownload(url);
+    }
+    // Default dummy video stream (mimics minimal MP4 ftyp signature in bytes)
+    const dummyStream = Readable.from([Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32])]);
+    return {
+      data: dummyStream,
+      mimeType: 'video/mp4',
+      sizeBytes: 12,
+      filename: 'video.mp4'
+    };
+  }
+}
+
+class FakeAssetStorage implements AssetStorage {
+  public readonly files = new Map<string, any>();
+
+  async save(path: string, data: any): Promise<string> {
+    this.files.set(path, data);
+    return path;
+  }
+
+  async delete(path: string): Promise<void> {
+    this.files.delete(path);
+  }
+
+  async exists(path: string): Promise<boolean> {
+    return this.files.has(path);
+  }
+}
+
+class FakeAssetRepository implements AssetRepository {
+  public readonly assets = new Map<string, AssetReference>();
+
+  async findById(id: string): Promise<AssetReference | null> {
+    const asset = this.assets.get(id);
+    return asset ? { ...asset } : null;
+  }
+
+  async save(asset: AssetReference): Promise<AssetReference> {
+    const saved = { ...asset };
+    this.assets.set(asset.id, saved);
+    return saved;
+  }
+
+  async delete(id: string): Promise<void> {
+    this.assets.delete(id);
+  }
+
+  async list(): Promise<AssetReference[]> {
+    return Array.from(this.assets.values());
+  }
+
+  async findByJobId(jobId: string): Promise<AssetReference | null> {
+    return Array.from(this.assets.values()).find(a => a.sourceJobId === jobId) || null;
+  }
+}
+
 // --- Test Suite ---
 
 describe('PollJobStatusUseCase', () => {
@@ -104,6 +170,14 @@ describe('PollJobStatusUseCase', () => {
     updatedAt: new Date()
   });
 
+  const setupUseCase = (jobRepo: JobRepository, providerRegistry: ProviderRegistry) => {
+    const downloader = new FakeAssetDownloader();
+    const storage = new FakeAssetStorage();
+    const assetRepo = new FakeAssetRepository();
+    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry, downloader, storage, assetRepo);
+    return { useCase, downloader, storage, assetRepo };
+  };
+
   it('should transition job from SUBMITTED to PROCESSING and update progress', async () => {
     const jobRepo = new FakeJobRepository();
     const providerRegistry = new ProviderRegistry();
@@ -116,7 +190,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.SUBMITTED);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     const result = await useCase.execute('job-1');
 
     assert.strictEqual(result.status, JobStatus.PROCESSING);
@@ -144,7 +218,7 @@ describe('PollJobStatusUseCase', () => {
     };
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     const result = await useCase.execute('job-1');
 
     assert.strictEqual(result.status, JobStatus.PROCESSING);
@@ -163,7 +237,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.PROCESSING);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     const result = await useCase.execute('job-1');
 
     assert.strictEqual(result.status, JobStatus.FAILED);
@@ -187,7 +261,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.PROCESSING);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     const result = await useCase.execute('job-1');
 
     assert.strictEqual(result.status, JobStatus.CANCELLED);
@@ -197,7 +271,7 @@ describe('PollJobStatusUseCase', () => {
     assert.strictEqual(persisted.status, JobStatus.CANCELLED);
   });
 
-  it('should throw SucceededStateDeferredError and NOT mutate database state if provider reports SUCCEEDED', async () => {
+  it('should download, store asset, register in repo, and transition job to SUCCEEDED when provider reports succeeded', async () => {
     const jobRepo = new FakeJobRepository();
     const providerRegistry = new ProviderRegistry();
     
@@ -209,24 +283,131 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.PROCESSING);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const downloader = new FakeAssetDownloader();
+    const storage = new FakeAssetStorage();
+    const assetRepo = new FakeAssetRepository();
+    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry, downloader, storage, assetRepo);
 
-    // Verify SucceededStateDeferredError is thrown
+    const result = await useCase.execute('job-1');
+
+    // Assert Job status transitions to SUCCEEDED
+    assert.strictEqual(result.status, JobStatus.SUCCEEDED);
+    assert.strictEqual(result.progress, 1.0);
+    assert.ok(result.resultAssetId);
+
+    // Assert Asset was saved in storage
+    const expectedStoragePath = `generated/job-1/video.mp4`;
+    assert.ok(await storage.exists(expectedStoragePath));
+
+    // Assert AssetReference is persisted in the repository
+    const assetRef = await assetRepo.findById(result.resultAssetId);
+    assert.ok(assetRef);
+    assert.strictEqual(assetRef.sourceJobId, 'job-1');
+    assert.strictEqual(assetRef.path, expectedStoragePath);
+    assert.strictEqual(assetRef.mimeType, 'video/mp4');
+    assert.strictEqual(assetRef.sizeBytes, 12);
+    assert.strictEqual(assetRef.kind, 'generated');
+
+    // Assert Job was persist-updated in the database
+    const persistedJob = await jobRepo.findById('job-1');
+    assert.ok(persistedJob);
+    assert.strictEqual(persistedJob.status, JobStatus.SUCCEEDED);
+    assert.strictEqual(persistedJob.resultAssetId, result.resultAssetId);
+  });
+
+  it('should transition job to FAILED when provider reports succeeded but assetUrl is missing', async () => {
+    const jobRepo = new FakeJobRepository();
+    const providerRegistry = new ProviderRegistry();
+    
+    const fakeAdapter = new FakeProviderAdapter('mock-provider', async () => {
+      return { status: 'succeeded', assetUrl: null }; // Missing assetUrl
+    });
+    providerRegistry.register(fakeAdapter);
+
+    const job = createJobInStatus('job-1', JobStatus.PROCESSING);
+    await jobRepo.save(job);
+
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
+
     await assert.rejects(
       useCase.execute('job-1'),
-      SucceededStateDeferredError
+      DownloadedAssetValidationError
     );
 
-    // Verify state in DB remains unchanged (still PROCESSING, not SUCCEEDED)
-    const persisted = await jobRepo.findById('job-1');
-    assert.ok(persisted);
-    assert.strictEqual(persisted.status, JobStatus.PROCESSING);
+    const persistedJob = await jobRepo.findById('job-1');
+    assert.ok(persistedJob);
+    assert.strictEqual(persistedJob.status, JobStatus.FAILED);
+    assert.match(persistedJob.lastError || '', /no asset URL/);
+  });
+
+  it('should transition job to FAILED when asset download fails with terminal DownloadedAssetValidationError', async () => {
+    const jobRepo = new FakeJobRepository();
+    const providerRegistry = new ProviderRegistry();
+    
+    const fakeAdapter = new FakeProviderAdapter('mock-provider', async () => {
+      return { status: 'succeeded', assetUrl: 'http://example.com/video.mp4' };
+    });
+    providerRegistry.register(fakeAdapter);
+
+    const job = createJobInStatus('job-1', JobStatus.PROCESSING);
+    await jobRepo.save(job);
+
+    const downloader = new FakeAssetDownloader();
+    downloader.mockDownload = async () => {
+      throw new DownloadedAssetValidationError('File size exceeds allowed limit');
+    };
+    const storage = new FakeAssetStorage();
+    const assetRepo = new FakeAssetRepository();
+    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry, downloader, storage, assetRepo);
+
+    await assert.rejects(
+      useCase.execute('job-1'),
+      DownloadedAssetValidationError
+    );
+
+    // Job should be marked as FAILED in database
+    const persistedJob = await jobRepo.findById('job-1');
+    assert.ok(persistedJob);
+    assert.strictEqual(persistedJob.status, JobStatus.FAILED);
+    assert.strictEqual(persistedJob.lastError, 'File size exceeds allowed limit');
+  });
+
+  it('should NOT update job state and should propagate error when asset download fails with transient error', async () => {
+    const jobRepo = new FakeJobRepository();
+    const providerRegistry = new ProviderRegistry();
+    
+    const fakeAdapter = new FakeProviderAdapter('mock-provider', async () => {
+      return { status: 'succeeded', assetUrl: 'http://example.com/video.mp4' };
+    });
+    providerRegistry.register(fakeAdapter);
+
+    const job = createJobInStatus('job-1', JobStatus.PROCESSING);
+    await jobRepo.save(job);
+
+    const downloader = new FakeAssetDownloader();
+    downloader.mockDownload = async () => {
+      throw new Error('Connection reset by peer'); // Transient network error
+    };
+    const storage = new FakeAssetStorage();
+    const assetRepo = new FakeAssetRepository();
+    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry, downloader, storage, assetRepo);
+
+    await assert.rejects(
+      useCase.execute('job-1'),
+      /Connection reset by peer/
+    );
+
+    // Job status should NOT have changed (should still be PROCESSING)
+    const persistedJob = await jobRepo.findById('job-1');
+    assert.ok(persistedJob);
+    assert.strictEqual(persistedJob.status, JobStatus.PROCESSING);
+    assert.strictEqual(persistedJob.lastError, undefined);
   });
 
   it('should throw JobNotFoundError when job is not found', async () => {
     const jobRepo = new FakeJobRepository();
     const providerRegistry = new ProviderRegistry();
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
 
     await assert.rejects(
       useCase.execute('non-existent-id'),
@@ -241,7 +422,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.QUEUED);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     await assert.rejects(
       useCase.execute('job-1'),
       InvalidJobStatusError
@@ -255,7 +436,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.SUCCEEDED);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     await assert.rejects(
       useCase.execute('job-1'),
       InvalidJobStatusError
@@ -270,7 +451,7 @@ describe('PollJobStatusUseCase', () => {
     delete job.providerJobId; // Force empty
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     await assert.rejects(
       useCase.execute('job-1'),
       MissingProviderJobIdError
@@ -284,7 +465,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.SUBMITTED);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
     await assert.rejects(
       useCase.execute('job-1'),
       ProviderNotFoundError
@@ -303,7 +484,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.PROCESSING);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
 
     await assert.rejects(
       useCase.execute('job-1'),
@@ -328,7 +509,7 @@ describe('PollJobStatusUseCase', () => {
     const job = createJobInStatus('job-1', JobStatus.PROCESSING);
     await jobRepo.save(job);
 
-    const useCase = new PollJobStatusUseCase(jobRepo, providerRegistry);
+    const { useCase } = setupUseCase(jobRepo, providerRegistry);
 
     await assert.rejects(
       useCase.execute('job-1'),
@@ -340,3 +521,4 @@ describe('PollJobStatusUseCase', () => {
     assert.strictEqual(persisted.status, JobStatus.PROCESSING);
   });
 });
+
