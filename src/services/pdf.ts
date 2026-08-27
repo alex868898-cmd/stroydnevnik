@@ -20,7 +20,17 @@ export interface ReportData {
 export async function generateReportPDF(data: ReportData): Promise<string> {
   const { project, periodStart, periodEnd, items, totalAmount, contractor, receiptImages = [] } = data;
   
-  const itemsHtml = items.map((item, index) => `
+  const orderedItems = [
+    ...items.filter(item => (item.itemType || 'work') === 'work'),
+    ...items.filter(item => item.itemType === 'material'),
+  ];
+  const itemsHtml = orderedItems.map((item, index) => {
+    const type = item.itemType || 'work';
+    const previousType = index > 0 ? (orderedItems[index - 1].itemType || 'work') : null;
+    const section = previousType !== type
+      ? `<tr class="section"><td colspan="5">${type === 'material' ? 'МАТЕРІАЛИ' : 'РОБОТИ'}</td></tr>`
+      : '';
+    return `${section}
     <tr class="${index % 2 === 0 ? 'even' : 'odd'}">
       <td class="col-name">${item.action}</td>
       <td class="col-volume">${item.volume !== null ? item.volume : '-'}</td>
@@ -28,7 +38,9 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
       <td class="col-price">${formatCurrency(item.pricePerUnit)}</td>
       <td class="col-total">${formatCurrency(item.total)}</td>
     </tr>
-  `).join('');
+  `}).join('');
+  const workTotal = items.filter(item => (item.itemType || 'work') === 'work').reduce((sum, item) => sum + (item.total || 0), 0);
+  const materialTotal = items.filter(item => item.itemType === 'material').reduce((sum, item) => sum + (item.total || 0), 0);
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -94,6 +106,13 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
           table.items td {
             padding: 10px;
             border-bottom: 1px solid #e2e8f0;
+          }
+          table.items tr.section td {
+            background-color: #dbeafe;
+            color: #1d4ed8;
+            font-weight: bold;
+            letter-spacing: 0.6px;
+            padding: 8px 10px;
           }
           .even {
             background-color: #f8fafc;
@@ -185,6 +204,8 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
 
         <div class="totals-container">
           <table class="totals-table">
+            <tr><td>Роботи:</td><td style="text-align:right;">${formatCurrency(workTotal)}</td></tr>
+            ${materialTotal > 0 ? `<tr><td>Матеріали:</td><td style="text-align:right;">${formatCurrency(materialTotal)}</td></tr>` : ''}
             <tr>
               <td class="total-label">Всього зароблено:</td>
               <td class="total-value">${formatCurrency(totalAmount)}</td>

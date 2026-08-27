@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
 export interface ReceiptAttachment {
@@ -16,7 +17,11 @@ export async function pickAndRecognizeReceipt() {
     base64: true,
   });
   if (result.canceled || !result.assets[0]) return null;
-  const asset = result.assets[0];
+  const originalAsset = result.assets[0];
+  const context = ImageManipulator.manipulate(originalAsset.uri);
+  const rendered = await context.renderAsync();
+  const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.82, base64: true });
+  const asset: ImagePicker.ImagePickerAsset = { ...originalAsset, uri: normalized.uri, base64: normalized.base64 || null, mimeType: 'image/jpeg' };
   if (!asset.base64) throw new Error('Не вдалося прочитати зображення чека');
 
   const mimeType = asset.mimeType || 'image/jpeg';
@@ -74,8 +79,10 @@ export async function getReceiptImages(projectId: string, startDate: string, end
     if (!signed?.signedUrl || !FileSystem.cacheDirectory) continue;
     const local = `${FileSystem.cacheDirectory}receipt_${receipt.id}.jpg`;
     await FileSystem.downloadAsync(signed.signedUrl, local);
-    const base64 = await FileSystem.readAsStringAsync(local, { encoding: FileSystem.EncodingType.Base64 });
-    images.push(`data:image/jpeg;base64,${base64}`);
+    const context = ImageManipulator.manipulate(local);
+    const rendered = await context.renderAsync();
+    const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
+    if (normalized.base64) images.push(`data:image/jpeg;base64,${normalized.base64}`);
   }
   return images;
 }

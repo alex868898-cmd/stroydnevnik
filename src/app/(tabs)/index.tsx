@@ -248,7 +248,7 @@ export default function JournalScreen() {
         project_id: activeProjectId,
         work_date: new Date().toISOString().split('T')[0],
         voice_transcript: recognized.vendor ? `Чек: ${recognized.vendor}` : 'Чек на матеріали',
-        work_items: [{ action: recognized.vendor ? `Матеріали — ${recognized.vendor}` : 'Матеріали', workType: 'Матеріали', volume: 1, unit: 'чек', pricePerUnit: recognized.total, total: recognized.total, priceFromCatalog: false }],
+        work_items: [{ itemType: 'material', action: recognized.vendor ? `Матеріали — ${recognized.vendor}` : 'Матеріали', workType: 'Матеріали', volume: 1, unit: 'чек', pricePerUnit: recognized.total, total: recognized.total, priceFromCatalog: false }],
         total_amount: recognized.total,
         volumes_confirmed: true,
         is_day_off: false,

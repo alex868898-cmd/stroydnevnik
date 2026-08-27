@@ -62,6 +62,7 @@ export default function ReportsScreen() {
   const [action, setAction] = useState('');
   const [volume, setVolume] = useState('');
   const [unit, setUnit] = useState('м²');
+  const [manualItemType, setManualItemType] = useState<'work' | 'material'>('work');
   const [price, setPrice] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -238,6 +239,7 @@ export default function ReportsScreen() {
     setAdding(true);
     try {
       const newWorkItem: WorkItem = {
+        itemType: manualItemType,
         action: action.trim(),
         workType: action.trim(),
         volume: volNum,
@@ -263,6 +265,7 @@ export default function ReportsScreen() {
       }]);
 
       setAction('');
+      setManualItemType('work');
       setVolume('');
       setPrice('');
       setMarketStats(null);
@@ -531,6 +534,17 @@ export default function ReportsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Додати позицію вручну</Text>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Тип позиції</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(['work', 'material'] as const).map(type => (
+                  <TouchableOpacity key={type} onPress={() => setManualItemType(type)} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: manualItemType === type ? COLORS.primary : COLORS.cardBorder, backgroundColor: manualItemType === type ? COLORS.primary : COLORS.background }}>
+                    <Text style={{ color: manualItemType === type ? '#fff' : COLORS.textSecondary, fontWeight: '700' }}>{type === 'work' ? 'Робота' : 'Матеріал'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Найменування роботи</Text>

@@ -43,6 +43,7 @@ export default function ProjectsScreen() {
   const [workAction, setWorkAction] = useState('');
   const [workVolume, setWorkVolume] = useState('');
   const [workUnit, setWorkUnit] = useState('м²');
+  const [workItemType, setWorkItemType] = useState<'work' | 'material'>('work');
   const [workPrice, setWorkPrice] = useState('');
   const [savingWork, setSavingWork] = useState(false);
 
@@ -220,6 +221,7 @@ export default function ProjectsScreen() {
     setSavingWork(true);
     try {
       const newItem: WorkItem = {
+        itemType: workItemType,
         action: workAction.trim(),
         workType: workAction.trim(),
         volume: volNum,
@@ -271,6 +273,7 @@ export default function ProjectsScreen() {
 
       // Reset Form and Reload
       setWorkAction('');
+      setWorkItemType('work');
       setWorkVolume('');
       setWorkPrice('');
       setMarketStats(null);
@@ -448,6 +451,17 @@ export default function ProjectsScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Додати роботу в історію</Text>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Тип позиції</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(['work', 'material'] as const).map(type => (
+                    <TouchableOpacity key={type} onPress={() => setWorkItemType(type)} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: workItemType === type ? COLORS.primary : COLORS.cardBorder, backgroundColor: workItemType === type ? COLORS.primary : COLORS.background }}>
+                      <Text style={{ color: workItemType === type ? '#fff' : COLORS.textSecondary, fontWeight: '700' }}>{type === 'work' ? 'Робота' : 'Матеріал'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Дата (РРРР-ММ-ДД)</Text>

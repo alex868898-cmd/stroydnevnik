@@ -8,6 +8,7 @@ export interface Project {
 }
 
 export interface WorkItem {
+  itemType?: 'work' | 'material';
   action: string;
   workType: string;
   volume: number | null;

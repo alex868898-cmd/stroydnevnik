@@ -30,6 +30,7 @@ export async function parseWorkTranscript(
 
     for (const segment of parsedData.segments) {
       for (const item of segment.items || []) {
+        if (!item.itemType) item.itemType = 'work';
         if (item.priceWasSpoken === true) continue;
         const match = catalog.find(entry => entry.work_type.trim().toLocaleLowerCase('uk-UA') === item.workType?.trim().toLocaleLowerCase('uk-UA'));
         if (!match) continue;
