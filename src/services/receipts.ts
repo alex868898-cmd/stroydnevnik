@@ -19,6 +19,20 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
+function base64ToArrayBuffer(base64: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function detectedImageMime(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  return null;
+}
+
 export async function pickAndRecognizeReceipt() {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
@@ -53,11 +67,11 @@ export async function saveReceipt(params: {
 }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Потрібно увійти в обліковий запис');
-  const extension = params.asset.mimeType?.includes('png') ? 'png' : 'jpg';
-  const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
-  const bytes = await (await fetch(params.asset.uri)).arrayBuffer();
+  if (!params.asset.base64) throw new Error('Зображення чека не підготовлене для збереження');
+  const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+  const bytes = base64ToArrayBuffer(params.asset.base64);
   const { error: uploadError } = await supabase.storage.from('receipts').upload(path, bytes, {
-    contentType: params.asset.mimeType || 'image/jpeg',
+    contentType: 'image/jpeg',
     upsert: false,
   });
   if (uploadError) throw uploadError;
@@ -89,9 +103,10 @@ export async function getReceiptImages(projectId: string, startDate: string, end
     try {
       const response = await fetch(signed.signedUrl);
       if (!response.ok) continue;
-      const mimeType = response.headers.get('content-type')?.split(';')[0] || 'image/jpeg';
-      if (!mimeType.startsWith('image/')) continue;
-      const originalDataUri = `data:${mimeType};base64,${arrayBufferToBase64(await response.arrayBuffer())}`;
+      const buffer = await response.arrayBuffer();
+      const mimeType = detectedImageMime(buffer);
+      if (!mimeType) continue;
+      const originalDataUri = `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`;
       try {
         const context = ImageManipulator.manipulate(originalDataUri);
         const rendered = await context.renderAsync();
