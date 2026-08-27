@@ -1,4 +1,5 @@
 import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Project, WorkItem } from '../lib/types';
 import { formatCurrency, formatDate } from '../lib/formatters';
 import { ContractorProfile } from './contractorProfile';
@@ -200,11 +201,20 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
     </html>
   `;
 
-  const { uri } = await Print.printToFileAsync({
+  const { uri, base64 } = await Print.printToFileAsync({
     html: htmlContent,
-    base64: false,
+    base64: true,
   });
-  // On Android (especially Expo Go), the temporary Print file may be shareable
-  // but not readable by FileSystem.copyAsync. Share the fresh URI directly.
-  return uri;
+
+  if (!base64 || !FileSystem.cacheDirectory) {
+    return uri;
+  }
+
+  // Some Android/Expo Go builds deny both copy and share access to Print's
+  // temporary URI. Writing the returned base64 creates an app-owned file.
+  const destination = `${FileSystem.cacheDirectory}koshtorys_${Date.now()}.pdf`;
+  await FileSystem.writeAsStringAsync(destination, base64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return destination;
 }
