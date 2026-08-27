@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateWheelPicker } from '../../components/date/DateWheelPicker';
 import { getContractorProfile } from '../../services/contractorProfile';
 import { getReceiptImages } from '../../services/receipts';
+import { getPriceRange } from '../../services/priceKnowledge';
 
 const toLocalDateString = (date: Date) => {
   const year = date.getFullYear();
@@ -209,32 +210,7 @@ export default function ReportsScreen() {
     }
     
     try {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
-
-      const { data, error } = await supabase
-        .from('price_statistics')
-        .select('price')
-        .ilike('work_type', workType.trim())
-        .gt('recorded_at', ninetyDaysAgoStr);
-
-      if (error) throw error;
-
-      if (data && data.length >= 3) {
-        const prices = data.map(d => Number(d.price));
-        const priceMin = Math.min(...prices);
-        const priceMax = Math.max(...prices);
-        const priceAvg = Math.round(prices.reduce((sum, val) => sum + val, 0) / prices.length);
-        setMarketStats({
-          min: priceMin,
-          max: priceMax,
-          avg: priceAvg,
-          samples: prices.length
-        });
-      } else {
-        setMarketStats(null);
-      }
+      setMarketStats(await getPriceRange(workType));
     } catch (err) {
       console.warn('Failed to load market statistics inside reports:', err);
       setMarketStats(null);
@@ -603,9 +579,9 @@ export default function ReportsScreen() {
                 placeholderTextColor={COLORS.textMuted}
                 onFocus={() => fetchMarketStats(action)}
               />
-              {marketStats && marketStats.samples >= 3 && (
+              {marketStats && (
                 <Text style={styles.marketHint}>
-                  Ринок: від {marketStats.min} до {marketStats.max} грн (середня {marketStats.avg} грн)
+                  За внутрішньою базою: {marketStats.min}–{marketStats.max} грн. Рекомендуємо {marketStats.max} грн або середню {marketStats.avg} грн.
                 </Text>
               )}
             </View>

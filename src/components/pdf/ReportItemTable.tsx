@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { WorkItem, Project } from '../../lib/types';
 import { COLORS } from '../../lib/constants';
 import { formatCurrency } from '../../lib/formatters';
-import { supabase } from '../../services/supabase';
+import { getPriceRange } from '../../services/priceKnowledge';
 
 interface ReportItemTableProps {
   items: WorkItem[];
@@ -45,32 +45,7 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     }
     
     try {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
-
-      const { data, error } = await supabase
-        .from('price_statistics')
-        .select('price')
-        .ilike('work_type', workType.trim())
-        .gt('recorded_at', ninetyDaysAgoStr);
-
-      if (error) throw error;
-
-      if (data && data.length >= 3) {
-        const prices = data.map(d => Number(d.price));
-        const priceMin = Math.min(...prices);
-        const priceMax = Math.max(...prices);
-        const priceAvg = Math.round(prices.reduce((sum, val) => sum + val, 0) / prices.length);
-        setMarketStats({
-          min: priceMin,
-          max: priceMax,
-          avg: priceAvg,
-          samples: prices.length
-        });
-      } else {
-        setMarketStats(null);
-      }
+      setMarketStats(await getPriceRange(workType));
     } catch (err) {
       console.warn('Failed to load market statistics inside table:', err);
       setMarketStats(null);
@@ -118,7 +93,8 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
       unit: unitText,
       pricePerUnit: priceNum,
       total,
-      priceFromCatalog: currentItem.priceFromCatalog,
+      priceFromCatalog: priceNum === currentItem.pricePerUnit ? currentItem.priceFromCatalog : false,
+      priceWasSpoken: currentItem.priceWasSpoken,
     });
 
     if (selectedProjId !== projectId && onChangeProject) {
@@ -282,9 +258,9 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
                 placeholderTextColor={COLORS.textMuted}
                 onFocus={() => fetchMarketStats(actionText)}
               />
-              {marketStats && marketStats.samples >= 3 && (
+              {marketStats && (
                 <Text style={styles.marketHint}>
-                  Ринок: від {marketStats.min} до {marketStats.max} грн (середня {marketStats.avg} грн)
+                  За внутрішньою базою: {marketStats.min}–{marketStats.max} грн. Рекомендуємо {marketStats.max} грн або середню {marketStats.avg} грн.
                 </Text>
               )}
             </View>

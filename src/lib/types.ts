@@ -15,6 +15,7 @@ export interface WorkItem {
   pricePerUnit: number | null;
   total: number | null;
   priceFromCatalog: boolean;
+  priceWasSpoken?: boolean;
 }
 
 export interface WorkLog {

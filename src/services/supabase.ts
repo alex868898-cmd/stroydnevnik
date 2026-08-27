@@ -24,17 +24,38 @@ export async function getPriceCatalog(forceRefresh = false): Promise<PriceCatalo
     return catalogCache;
   }
   
-  const { data, error } = await supabase
-    .from('price_catalog')
-    .select('*')
-    .order('work_type', { ascending: true });
+  const [{ data, error }, { data: statistics, error: statisticsError }] = await Promise.all([
+    supabase.from('price_catalog').select('*').order('work_type', { ascending: true }),
+    supabase.from('price_statistics').select('work_type, price, unit'),
+  ]);
     
   if (error) {
     console.error('Error fetching price catalog:', error);
     throw error;
   }
   
-  catalogCache = data || [];
+  if (statisticsError) console.warn('Unable to include uploaded prices:', statisticsError);
+  const merged = new Map<string, PriceCatalog>();
+  for (const row of data || []) {
+    const key = row.work_type.trim().toLocaleLowerCase('uk-UA');
+    const current = merged.get(key);
+    if (!current || Number(row.base_price) > Number(current.base_price)) merged.set(key, row);
+  }
+  for (const row of statistics || []) {
+    const key = row.work_type.trim().toLocaleLowerCase('uk-UA');
+    const current = merged.get(key);
+    if (!current || Number(row.price) > Number(current.base_price)) {
+      merged.set(key, {
+        id: current?.id || `statistics:${key}`,
+        work_type: row.work_type,
+        unit: row.unit || current?.unit || 'послуга',
+        unit_type: current?.unit_type || (row.unit === 'м²' ? 'sq_m' : row.unit === 'п.м' ? 'lm' : 'service'),
+        base_price: Number(row.price),
+        region: current?.region || 'Україна',
+      } as PriceCatalog);
+    }
+  }
+  catalogCache = Array.from(merged.values()).sort((a, b) => a.work_type.localeCompare(b.work_type, 'uk'));
   return catalogCache;
 }
 

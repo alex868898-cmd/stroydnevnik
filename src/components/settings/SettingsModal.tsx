@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../../lib/constants';
 import { supabase, clearCatalogCache } from '../../services/supabase';
 import { getContractorProfile, saveContractorProfile } from '../../services/contractorProfile';
+import { importPriceFile } from '../../services/priceKnowledge';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -50,6 +51,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const [contractorName, setContractorName] = useState('');
   const [contractorPhone, setContractorPhone] = useState('');
   const [savingContractor, setSavingContractor] = useState(false);
+  const [importingPrices, setImportingPrices] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -155,6 +157,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
       Alert.alert('Помилка', 'Не вдалося завантажити ринкові ціни');
     } finally {
       setLoadingMarketPrices(false);
+    }
+  };
+
+  const handleImportPrices = async () => {
+    setImportingPrices(true);
+    try {
+      const result = await importPriceFile();
+      if (!result) return;
+      Alert.alert('Прайс завантажено', `${result.fileName}: додано ${result.count} позицій. Максимальні ціни вже доступні для автопідстановки.`);
+      if (showMarketPrices) await loadMarketPrices();
+    } catch (error: any) {
+      Alert.alert('Не вдалося завантажити прайс', error?.message || 'Перевірте формат таблиці');
+    } finally {
+      setImportingPrices(false);
     }
   };
 
@@ -306,6 +322,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
           </View>
 
           <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+            <Text style={styles.sectionTitle}>Власний прайс</Text>
+            <View style={styles.card}>
+              <Text style={styles.settingDesc}>Excel або CSV: колонки «Найменування роботи», «Одиниця» та «Ціна». Дані поповнять загальну базу цін.</Text>
+              <TouchableOpacity style={styles.saveRemindersBtn} onPress={handleImportPrices} disabled={importingPrices}>
+                {importingPrices ? <ActivityIndicator color="#fff" /> : (
+                  <View style={styles.row}><Ionicons name="cloud-upload-outline" size={20} color="#fff" /><Text style={[styles.saveRemindersBtnText, { marginLeft: 8 }]}>Завантажити прайс</Text></View>
+                )}
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.sectionTitle}>Дані підрядника для PDF</Text>
             <View style={styles.card}>
               <View style={styles.inputGroup}>

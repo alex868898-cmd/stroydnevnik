@@ -28,6 +28,18 @@ export async function parseWorkTranscript(
     if (!parsedData.segments) parsedData.segments = [];
     if (!parsedData.clarifications) parsedData.clarifications = [];
 
+    for (const segment of parsedData.segments) {
+      for (const item of segment.items || []) {
+        if (item.priceWasSpoken === true) continue;
+        const match = catalog.find(entry => entry.work_type.trim().toLocaleLowerCase('uk-UA') === item.workType?.trim().toLocaleLowerCase('uk-UA'));
+        if (!match) continue;
+        item.pricePerUnit = Number(match.base_price);
+        item.unit = match.unit;
+        item.priceFromCatalog = true;
+        item.total = item.volume === null ? null : item.volume * Number(match.base_price);
+      }
+    }
+
     return parsedData;
   } catch (error) {
     console.error('Error parsing transcript with GPT Edge Function:', error);
