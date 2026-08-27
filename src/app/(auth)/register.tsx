@@ -63,7 +63,7 @@ export default function RegisterScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.formContainer}>
-        <Text style={styles.logo}>СтройДневник 🏗️</Text>
+        <Text style={styles.logo}>KOSHTOR</Text>
         <Text style={styles.title}>Реєстрація</Text>
 
         <View style={styles.inputGroup}>
