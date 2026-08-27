@@ -90,43 +90,6 @@ export default function JournalScreen() {
     return relevantLogs.some(l => l.is_day_off);
   }, [workLogs, activeProjectId]);
 
-  const handleToggleDayOff = async () => {
-    if (isDayOffToday) {
-      // Turn day off OFF (delete the day off log)
-      const dayOffLog = workLogs.find(l => 
-        (activeProjectId ? l.project_id === activeProjectId : l.project_id === null) && l.is_day_off
-      );
-      if (dayOffLog) {
-        await removeLog(dayOffLog.id);
-        Alert.alert('Вихідний скасовано', 'Тепер ви можете додавати виконані роботи.');
-      }
-    } else {
-      // Turn day off ON
-      // Ensure we confirm first
-      Alert.alert(
-        'Встановити вихідний?',
-        'Сьогодні не буде нараховуватися заробіток. Усі наявні записи за сьогодні буде збережено.',
-        [
-          { text: 'Скасувать', style: 'cancel' },
-          {
-            text: 'Так, відпочиваю 🌴',
-            onPress: async () => {
-              await saveLog({
-                project_id: activeProjectId,
-                work_date: new Date().toISOString().split('T')[0],
-                voice_transcript: 'Сьогодні вихідний',
-                work_items: [],
-                total_amount: 0,
-                volumes_confirmed: true,
-                is_day_off: true
-              });
-            }
-          }
-        ]
-      );
-    }
-  };
-
   const handleRecordingFinished = async (uri: string) => {
     setPipelineProcessing(true);
     setProcessingStatus('Завантаження аудіо...');
@@ -321,14 +284,6 @@ export default function JournalScreen() {
           </Text>
         </View>
         
-        <TouchableOpacity 
-          style={[styles.dayOffBtnCompact, isDayOffToday && styles.dayOffBtnActive]} 
-          onPress={handleToggleDayOff}
-        >
-          <Text style={[styles.dayOffBtnTextCompact, isDayOffToday && styles.dayOffBtnTextActive]}>
-            {isDayOffToday ? '🌴 Вихідний' : '🌴 Відпочинок'}
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <TopTabBar />

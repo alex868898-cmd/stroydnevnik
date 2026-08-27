@@ -14,6 +14,19 @@ import { Project, WorkLog, WorkItem, EstimateHistory } from '../../lib/types';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
 import { TopTabBar } from '../../components/navigation/TopTabBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DateWheelPicker } from '../../components/date/DateWheelPicker';
+
+const toLocalDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const fromLocalDateString = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return year && month && day ? new Date(year, month - 1, day, 12) : new Date();
+};
 
 interface EstimateDisplayItem {
   logId: string;
@@ -31,6 +44,9 @@ export default function ReportsScreen() {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [pickerStart, setPickerStart] = useState(new Date());
+  const [pickerEnd, setPickerEnd] = useState(new Date());
+  const [activeDatePicker, setActiveDatePicker] = useState<'start' | 'end'>('start');
 
   // Data States
   const [loadingData, setLoadingData] = useState(false);
@@ -364,15 +380,22 @@ export default function ReportsScreen() {
     }
   };
 
+  const openCustomDatePicker = () => {
+    setPickerStart(fromLocalDateString(customStart || dateRange.startDate));
+    setPickerEnd(fromLocalDateString(customEnd || dateRange.endDate));
+    setActiveDatePicker('start');
+    setShowCustomModal(true);
+  };
+
   const handleApplyCustomDates = () => {
-    if (customStart && customEnd) {
-      if (customStart > customEnd) {
-        Alert.alert('Помилка', 'Початкова дата не може быть більшою за кінцеву');
-        return;
-      }
-      setPeriodType('custom');
-      setShowCustomModal(false);
+    if (pickerStart > pickerEnd) {
+      Alert.alert('Помилка', 'Початкова дата не може бути більшою за кінцеву');
+      return;
     }
+    setCustomStart(toLocalDateString(pickerStart));
+    setCustomEnd(toLocalDateString(pickerEnd));
+    setPeriodType('custom');
+    setShowCustomModal(false);
   };
 
   const totalAmount = useMemo(() => {
@@ -413,7 +436,7 @@ export default function ReportsScreen() {
 
         <TouchableOpacity
           style={[styles.filterBtn, periodType === 'custom' && styles.filterBtnActive]}
-          onPress={() => setShowCustomModal(true)}
+          onPress={openCustomDatePicker}
         >
           <Text style={[styles.filterBtnText, periodType === 'custom' && styles.filterBtnTextActive]}>
             Період...
@@ -623,27 +646,28 @@ export default function ReportsScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Оберіть довільний період</Text>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Початкова дата (РРРР-ММ-ДД)</Text>
-              <TextInput
-                style={styles.input}
-                value={customStart}
-                onChangeText={setCustomStart}
-                placeholder="2026-06-01"
-                placeholderTextColor={COLORS.textMuted}
-              />
+            <View style={styles.dateTabs}>
+              <TouchableOpacity
+                style={[styles.dateTab, activeDatePicker === 'start' && styles.dateTabActive]}
+                onPress={() => setActiveDatePicker('start')}
+              >
+                <Text style={styles.dateTabLabel}>Початок</Text>
+                <Text style={styles.dateTabValue}>{formatDate(pickerStart)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dateTab, activeDatePicker === 'end' && styles.dateTabActive]}
+                onPress={() => setActiveDatePicker('end')}
+              >
+                <Text style={styles.dateTabLabel}>Кінець</Text>
+                <Text style={styles.dateTabValue}>{formatDate(pickerEnd)}</Text>
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Кінцева дата (РРРР-ММ-ДД)</Text>
-              <TextInput
-                style={styles.input}
-                value={customEnd}
-                onChangeText={setCustomEnd}
-                placeholder="2026-06-30"
-                placeholderTextColor={COLORS.textMuted}
-              />
-            </View>
+            <Text style={styles.datePickerHint}>Прокручуйте день, місяць і рік або натискайте стрілки</Text>
+            <DateWheelPicker
+              value={activeDatePicker === 'start' ? pickerStart : pickerEnd}
+              onChange={activeDatePicker === 'start' ? setPickerStart : setPickerEnd}
+            />
 
             <View style={styles.modalActions}>
               <TouchableOpacity 
@@ -716,6 +740,40 @@ const styles = StyleSheet.create({
   },
   filterBtnTextActive: {
     color: '#fff',
+  },
+  dateTabs: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  dateTab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    borderRadius: 10,
+    backgroundColor: COLORS.background,
+  },
+  dateTabActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '18',
+  },
+  dateTabLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  dateTabValue: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  datePickerHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 2,
   },
   rangeInfo: {
     flexDirection: 'row',
