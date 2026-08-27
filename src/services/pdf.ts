@@ -162,7 +162,7 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
       <body>
         <div class="header">
           <h1 class="title">Кошторис виконаних робіт</h1>
-          <p class="subtitle">Згенеровано в додатку СтройДневник</p>
+          <p class="subtitle">Кошторис сформовано в застосунку KOSHTOR</p>
         </div>
 
         <table class="info-table">
