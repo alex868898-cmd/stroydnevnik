@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { WorkItem } from '../../lib/types';
+import { WorkItem, Project } from '../../lib/types';
 import { COLORS } from '../../lib/constants';
 import { formatCurrency } from '../../lib/formatters';
 import { supabase } from '../../services/supabase';
@@ -12,6 +12,9 @@ interface ReportItemTableProps {
   onDeleteItem?: (index: number) => void;
   onMoveItem?: (index: number) => void; // for splitting project
   editable?: boolean;
+  projects?: Project[];
+  projectId?: string | null;
+  onChangeProject?: (projectId: string | null) => void;
 }
 
 export const ReportItemTable: React.FC<ReportItemTableProps> = ({
@@ -20,12 +23,17 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
   onDeleteItem,
   onMoveItem,
   editable = false,
+  projects,
+  projectId = null,
+  onChangeProject,
 }) => {
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [actionText, setActionText] = useState('');
   const [volumeVal, setVolumeVal] = useState('');
   const [unitText, setUnitText] = useState('');
   const [priceVal, setPriceVal] = useState('');
+  const [selectedProjId, setSelectedProjId] = useState<string | null>(null);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   
   // Market stats states
   const [marketStats, setMarketStats] = useState<{ min: number; max: number; avg: number; samples: number } | null>(null);
@@ -75,6 +83,8 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     setVolumeVal(item.volume !== null ? String(item.volume) : '');
     setUnitText(item.unit || '');
     setPriceVal(item.pricePerUnit !== null ? String(item.pricePerUnit) : '');
+    setSelectedProjId(projectId);
+    setShowProjectDropdown(false);
   };
 
   const saveEdit = () => {
@@ -111,6 +121,10 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
       priceFromCatalog: currentItem.priceFromCatalog,
     });
 
+    if (selectedProjId !== projectId && onChangeProject) {
+      onChangeProject(selectedProjId);
+    }
+
     closeEditModal();
   };
 
@@ -121,6 +135,8 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     setUnitText('');
     setPriceVal('');
     setMarketStats(null);
+    setSelectedProjId(null);
+    setShowProjectDropdown(false);
   };
 
   if (items.length === 0) {
@@ -267,6 +283,68 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
                 </Text>
               )}
             </View>
+
+            {projects !== undefined && (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Об'єкт (Проєкт)</Text>
+                {projects.length === 0 ? (
+                  <View style={styles.hintContainer}>
+                    <Text style={styles.warningText}>
+                      ⚠️ Спочатку створіть об'єкт в розділі Проєкти
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.dropdownWrapper}>
+                    <TouchableOpacity 
+                      style={styles.dropdownHeader} 
+                      onPress={() => setShowProjectDropdown(!showProjectDropdown)}
+                    >
+                      <Text style={styles.dropdownHeaderText}>
+                        {selectedProjId 
+                          ? projects.find(p => p.id === selectedProjId)?.name || 'Без об\'єкту' 
+                          : 'Без об\'єкту'}
+                      </Text>
+                      <Ionicons 
+                        name={showProjectDropdown ? "chevron-up" : "chevron-down"} 
+                        size={16} 
+                        color={COLORS.textSecondary} 
+                      />
+                    </TouchableOpacity>
+                    
+                    {showProjectDropdown && (
+                      <View style={styles.dropdownList}>
+                        <TouchableOpacity 
+                          style={[styles.dropdownItem, selectedProjId === null && styles.dropdownItemActive]} 
+                          onPress={() => {
+                            setSelectedProjId(null);
+                            setShowProjectDropdown(false);
+                          }}
+                        >
+                          <Text style={[styles.dropdownItemText, selectedProjId === null && styles.dropdownItemTextActive]}>
+                            Без об'єкту
+                          </Text>
+                        </TouchableOpacity>
+                        
+                        {projects.map(proj => (
+                          <TouchableOpacity 
+                            key={proj.id}
+                            style={[styles.dropdownItem, selectedProjId === proj.id && styles.dropdownItemActive]} 
+                            onPress={() => {
+                              setSelectedProjId(proj.id);
+                              setShowProjectDropdown(false);
+                            }}
+                          >
+                            <Text style={[styles.dropdownItemText, selectedProjId === proj.id && styles.dropdownItemTextActive]}>
+                              {proj.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
 
             <View style={styles.modalActions}>
               {onDeleteItem && (
@@ -470,5 +548,62 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
     marginTop: 4,
+  },
+  warningText: {
+    color: COLORS.warning,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  hintContainer: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+  },
+  dropdownWrapper: {
+    position: 'relative',
+    zIndex: 1000,
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  dropdownHeaderText: {
+    color: COLORS.text,
+    fontSize: 15,
+  },
+  dropdownList: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    borderRadius: 8,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.cardBorder + '20',
+  },
+  dropdownItemActive: {
+    backgroundColor: COLORS.primary + '20',
+  },
+  dropdownItemText: {
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  dropdownItemTextActive: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
 });

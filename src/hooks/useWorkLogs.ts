@@ -162,6 +162,19 @@ export function useWorkLogs(dateStr?: string) {
     }
   }, [workLogs, isToday]);
 
+  const updateLogProject = useCallback(async (logId: string, targetProjectId: string | null) => {
+    try {
+      const updated = await db.updateWorkLogProject(logId, targetProjectId);
+      if (isToday && cachedTodayLogs) {
+        updateCache(cachedTodayLogs.map(l => l.id === logId ? updated : l));
+      }
+      return updated;
+    } catch (err) {
+      console.error('Error updating log project:', err);
+      throw err;
+    }
+  }, [isToday]);
+
   return {
     workLogs,
     loading,
@@ -171,6 +184,7 @@ export function useWorkLogs(dateStr?: string) {
     updateLogItems,
     removeLog,
     moveWorkItem,
+    updateLogProject,
   };
 }
 

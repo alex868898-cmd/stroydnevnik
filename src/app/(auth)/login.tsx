@@ -16,6 +16,35 @@ export default function LoginScreen() {
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('Помилка', 'Будь ласка, введіть email');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'stroydnevnik://',
+      });
+
+      if (error) {
+        Alert.alert('Помилка', error.message);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(false);
+      Alert.alert('Лист надіслано', 'Лист надіслано на вашу пошту');
+      setShowForgotPassword(false);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Помилка', 'Щось пішло не так');
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -92,6 +121,51 @@ export default function LoginScreen() {
       Alert.alert('Помилка', 'Не вдалося встановити PIN-код');
     }
   };
+
+  if (showForgotPassword) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.formContainer}>
+          <Text style={styles.logo}>СтройДневник 🏗️</Text>
+          <Text style={styles.title}>Відновлення паролю</Text>
+          <Text style={styles.subtitle}>
+            Введіть адресу електронної пошти, щоб отримати посилання для відновлення паролю.
+          </Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Електронна пошта</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="example@mail.com"
+              placeholderTextColor={COLORS.textMuted}
+            />
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.button, loading && styles.buttonDisabled]} 
+            onPress={handleForgotPassword}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Надіслати</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.registerContainer}>
+            <TouchableOpacity onPress={() => setShowForgotPassword(false)}>
+              <Text style={styles.registerLink}>Повернутися до входу</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (showPinSetup) {
     return (
@@ -180,6 +254,13 @@ export default function LoginScreen() {
           ) : (
             <Text style={styles.buttonText}>Увійти</Text>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.forgotPasswordBtn} 
+          onPress={() => setShowForgotPassword(true)}
+        >
+          <Text style={styles.forgotPasswordText}>Забули пароль?</Text>
         </TouchableOpacity>
 
         <View style={styles.registerContainer}>
@@ -290,5 +371,14 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  forgotPasswordBtn: {
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  forgotPasswordText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

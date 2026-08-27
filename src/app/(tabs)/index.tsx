@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useProjects } from '../../hooks/useProjects';
 import { useWorkLogs } from '../../hooks/useWorkLogs';
 import { useEditWorkItem } from '../../hooks/useEditWorkItem';
-import { runVoicePipeline, saveParsedSegments } from '../../services/voicePipeline';
+import { runVoicePipeline, saveParsedSegments, runTextPipeline } from '../../services/voicePipeline';
 import { getPriceCatalog } from '../../services/supabase';
 import { formatCurrency } from '../../lib/formatters';
 import { COLORS, STORAGE_KEYS } from '../../lib/constants';
@@ -15,11 +15,13 @@ import { SettingsModal } from '../../components/settings/SettingsModal';
 import { Project, WorkLog, ClarificationPrompt, ParsedWorkLog, WorkItem } from '../../lib/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateWorkLogEarnings } from '../../lib/workLogUtils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function JournalScreen() {
   const { projects, loading: loadingProjects } = useProjects();
-  const { workLogs, loading: loadingLogs, saveLog, updateLogItems, removeLog, moveWorkItem, refresh: refreshLogs } = useWorkLogs();
+  const { workLogs, loading: loadingLogs, saveLog, updateLogItems, removeLog, moveWorkItem, refresh: refreshLogs, updateLogProject } = useWorkLogs();
   const { editItem, deleteItem } = useEditWorkItem();
+  const insets = useSafeAreaInsets();
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -225,6 +227,48 @@ export default function JournalScreen() {
     }
   };
 
+  const handleUpdateLogProject = async (logId: string, targetProjectId: string | null) => {
+    try {
+      await updateLogProject(logId, targetProjectId);
+    } catch (e) {
+      Alert.alert('Помилка', 'Не вдалося оновити об\'єкт запису');
+    }
+  };
+
+  const handleTextInput = async (text: string) => {
+    if (!text.trim()) return;
+    setPipelineProcessing(true);
+    setProcessingStatus('Аналіз тексту...');
+    try {
+      const parsedLog = await runTextPipeline(text);
+      
+      if (parsedLog.clarifications && parsedLog.clarifications.length > 0) {
+        setTempParsedLog(parsedLog);
+        setTempTranscript(text);
+        setCurrentClarifications(parsedLog.clarifications);
+        setCurrentClarificationIndex(0);
+        setShowClarification(true);
+      } else {
+        setProcessingStatus('Збереження виконаних робіт...');
+        const segmentsToSave = parsedLog.segments.map(seg => {
+          if (!seg.projectId && !seg.projectHint) {
+            return { ...seg, projectId: activeProjectId };
+          }
+          return seg;
+        });
+        await saveParsedSegments(segmentsToSave, text);
+        Alert.alert('Успішно', 'Роботи записані та додані до журналу!');
+        refreshLogs();
+      }
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Помилка обробки', err.message || 'Не вдалося обробити введення');
+    } finally {
+      setPipelineProcessing(false);
+      setProcessingStatus('');
+    }
+  };
+
   const handleMoveItemPrompt = (logId: string, itemIndex: number) => {
     const list = sortedProjects.filter(p => p.id !== activeProjectId);
     if (list.length === 0) {
@@ -257,30 +301,44 @@ export default function JournalScreen() {
   const projectLogsWithWorks = displayedLogs.filter(l => l.work_items.length > 0);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Top Header Row */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerSubtitle}>Журнал робіт</Text>
-          <Text style={styles.headerTitle}>Зароблено сьогодні</Text>
+        <View style={styles.tabPillContainer}>
+          <TouchableOpacity style={[styles.tabPillItem, styles.tabPillItemActive]}>
+            <Text style={[styles.tabPillText, styles.tabPillTextActive]}>Журнал</Text>
+            <View style={styles.activeLine} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.tabPillItem} onPress={() => router.replace('/(tabs)/projects')}>
+            <Text style={styles.tabPillText}>Проєкти</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.tabPillItem} onPress={() => router.replace('/(tabs)/reports')}>
+            <Text style={styles.tabPillText}>Звіти</Text>
+          </TouchableOpacity>
         </View>
+
         <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
-          <Ionicons name="settings-outline" size={24} color={COLORS.text} />
+          <Ionicons name="settings-outline" size={24} color="#FFF" />
         </TouchableOpacity>
       </View>
 
-      {/* Earnings Dashboard */}
-      <View style={styles.dashboard}>
-        <Text style={styles.earningsText}>
-          {isDayOffToday ? '0 грн' : formatCurrency(todayEarnings)}
-        </Text>
+      {/* Earnings Dashboard (Compact Card matching the screenshot) */}
+      <View style={styles.dashboardCompact}>
+        <View>
+          <Text style={styles.earningsLabel}>Зароблено сьогодні:</Text>
+          <Text style={styles.earningsAmount}>
+            {isDayOffToday ? '0 грн' : formatCurrency(todayEarnings)}
+          </Text>
+        </View>
         
         <TouchableOpacity 
-          style={[styles.dayOffBtn, isDayOffToday && styles.dayOffBtnActive]} 
+          style={[styles.dayOffBtnCompact, isDayOffToday && styles.dayOffBtnActive]} 
           onPress={handleToggleDayOff}
         >
-          <Text style={[styles.dayOffBtnText, isDayOffToday && styles.dayOffBtnTextActive]}>
-            {isDayOffToday ? '🌴 Сьогодні вихідний' : '🌴 Встановити вихідний'}
+          <Text style={[styles.dayOffBtnTextCompact, isDayOffToday && styles.dayOffBtnTextActive]}>
+            {isDayOffToday ? '🌴 Вихідний' : '🌴 Відпочинок'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -376,16 +434,20 @@ export default function JournalScreen() {
                 onEditItem={(idx, item) => handleEditItem(log.id, idx, item)}
                 onDeleteItem={(idx) => handleDeleteItem(log.id, idx)}
                 onMoveItem={(idx) => handleMoveItemPrompt(log.id, idx)}
+                projects={projects}
+                projectId={log.project_id}
+                onChangeProject={(newProjId) => handleUpdateLogProject(log.id, newProjId)}
               />
             </View>
           ))
         )}
       </ScrollView>
 
-      {/* Voice Input Section at the Bottom */}
+      {/* Voice/Text Input Section at the Bottom */}
       <View style={styles.recorderContainer}>
         <VoiceRecorder
           onRecordingFinished={handleRecordingFinished}
+          onSendText={handleTextInput}
           isProcessing={pipelineProcessing}
           processingStatus={processingStatus}
         />
@@ -422,56 +484,87 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 10,
     paddingHorizontal: 20,
     paddingBottom: 15,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  tabPillContainer: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    padding: 4,
+    flex: 1,
+    marginRight: 15,
+    height: 48,
+    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.text,
+  tabPillItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    position: 'relative',
+  },
+  tabPillText: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  tabPillTextActive: {
+    color: COLORS.primary,
+  },
+  activeLine: {
+    position: 'absolute',
+    bottom: 2,
+    left: '20%',
+    right: '20%',
+    height: 3,
+    backgroundColor: COLORS.primary,
+    borderRadius: 2,
   },
   settingsBtn: {
     padding: 8,
   },
-  dashboard: {
+  dashboardCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: COLORS.card,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    padding: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     marginHorizontal: 20,
-    alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
-  earningsText: {
-    fontSize: 48,
+  earningsLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  earningsAmount: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 10,
   },
-  dayOffBtn: {
+  dayOffBtnCompact: {
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   dayOffBtnActive: {
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderColor: COLORS.accent,
   },
-  dayOffBtnText: {
+  dayOffBtnTextCompact: {
     color: COLORS.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   dayOffBtnTextActive: {
