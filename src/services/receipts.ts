@@ -23,7 +23,7 @@ export async function pickAndRecognizeReceipt() {
   const { data, error } = await supabase.functions.invoke('receipt-ocr', {
     body: { imageBase64: asset.base64, mimeType },
   });
-  if (error) throw error;
+  if (error) throw new Error('Розпізнавання чеків ще не підключене в Supabase');
   const total = Number(data?.total);
   if (!Number.isFinite(total) || total <= 0) throw new Error('Не вдалося визначити підсумкову суму чека');
   return { asset, total, vendor: data?.vendor || null, receiptDate: data?.date || null };
@@ -65,6 +65,8 @@ export async function saveReceipt(params: {
 export async function getReceiptImages(projectId: string, startDate: string, endDate: string) {
   const { data, error } = await supabase.from('receipts').select('*')
     .eq('project_id', projectId).gte('created_at', `${startDate}T00:00:00`).lte('created_at', `${endDate}T23:59:59`);
+  // Reports must remain exportable while the optional receipt backend is not deployed yet.
+  if (error?.code === 'PGRST205' || error?.message?.includes("public.receipts")) return [];
   if (error) throw error;
   const images: string[] = [];
   for (const receipt of (data || []) as ReceiptAttachment[]) {
