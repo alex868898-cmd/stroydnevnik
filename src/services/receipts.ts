@@ -42,6 +42,7 @@ export async function pickAndRecognizeReceipt() {
   if (result.canceled || !result.assets[0]) return null;
   const originalAsset = result.assets[0];
   const context = ImageManipulator.manipulate(originalAsset.uri);
+  context.resize({ width: 1400, height: null });
   const rendered = await context.renderAsync();
   const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.82, base64: true });
   const asset: ImagePicker.ImagePickerAsset = { ...originalAsset, uri: normalized.uri, base64: normalized.base64 || null, mimeType: 'image/jpeg' };
@@ -109,6 +110,7 @@ export async function getReceiptImages(projectId: string, startDate: string, end
       const originalDataUri = `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`;
       try {
         const context = ImageManipulator.manipulate(originalDataUri);
+        context.resize({ width: 1400, height: null });
         const rendered = await context.renderAsync();
         const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
         images.push(normalized.base64 ? `data:image/jpeg;base64,${normalized.base64}` : originalDataUri);
