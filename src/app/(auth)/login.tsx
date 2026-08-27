@@ -126,7 +126,7 @@ export default function LoginScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.formContainer}>
-          <Text style={styles.logo}>СтройДневник 🏗️</Text>
+          <Text style={styles.logo}>KOSHTOR</Text>
           <Text style={styles.title}>Відновлення паролю</Text>
           <Text style={styles.subtitle}>
             Введіть адресу електронної пошти, щоб отримати посилання для відновлення паролю.
@@ -215,7 +215,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.formContainer}>
-        <Text style={styles.logo}>СтройДневник 🏗️</Text>
+        <Text style={styles.logo}>KOSHTOR</Text>
         <Text style={styles.title}>Вхід в систему</Text>
 
         <View style={styles.inputGroup}>
