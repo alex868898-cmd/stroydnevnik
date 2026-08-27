@@ -1,5 +1,4 @@
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
@@ -8,6 +7,16 @@ export interface ReceiptAttachment {
   total: number;
   vendor: string | null;
   storage_path: string;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 export async function pickAndRecognizeReceipt() {
@@ -76,13 +85,24 @@ export async function getReceiptImages(projectId: string, startDate: string, end
   const images: string[] = [];
   for (const receipt of (data || []) as ReceiptAttachment[]) {
     const { data: signed } = await supabase.storage.from('receipts').createSignedUrl(receipt.storage_path, 120);
-    if (!signed?.signedUrl || !FileSystem.cacheDirectory) continue;
-    const local = `${FileSystem.cacheDirectory}receipt_${receipt.id}.jpg`;
-    await FileSystem.downloadAsync(signed.signedUrl, local);
-    const context = ImageManipulator.manipulate(local);
-    const rendered = await context.renderAsync();
-    const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
-    if (normalized.base64) images.push(`data:image/jpeg;base64,${normalized.base64}`);
+    if (!signed?.signedUrl) continue;
+    try {
+      const response = await fetch(signed.signedUrl);
+      if (!response.ok) continue;
+      const mimeType = response.headers.get('content-type')?.split(';')[0] || 'image/jpeg';
+      if (!mimeType.startsWith('image/')) continue;
+      const originalDataUri = `data:${mimeType};base64,${arrayBufferToBase64(await response.arrayBuffer())}`;
+      try {
+        const context = ImageManipulator.manipulate(originalDataUri);
+        const rendered = await context.renderAsync();
+        const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
+        images.push(normalized.base64 ? `data:image/jpeg;base64,${normalized.base64}` : originalDataUri);
+      } catch {
+        if (mimeType === 'image/jpeg' || mimeType === 'image/png') images.push(originalDataUri);
+      }
+    } catch (error) {
+      console.warn('Unable to prepare receipt image for PDF:', receipt.id, error);
+    }
   }
   return images;
 }
