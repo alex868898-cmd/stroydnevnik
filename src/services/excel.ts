@@ -49,6 +49,9 @@ export async function generateReportCSV(data: CSVReportData): Promise<string> {
 
   // Write to document directory using legacy expo-file-system import
   const filename = `koshtorys_${project.id}_${Date.now()}.csv`;
+  if (!FileSystem.documentDirectory) {
+    throw new Error('Сховище документів недоступне');
+  }
   const fileUri = `${FileSystem.documentDirectory}${filename}`;
   
   await FileSystem.writeAsStringAsync(fileUri, BOM + csv, {

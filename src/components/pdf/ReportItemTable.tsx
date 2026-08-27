@@ -181,7 +181,12 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
           <Text style={[styles.cell, styles.colPrice, styles.cellText]}>
             {item.pricePerUnit !== null ? Math.round(item.pricePerUnit) : '-'}
           </Text>
-          <Text style={[styles.cell, styles.colTotal, styles.cellText, styles.boldText]}>
+          <Text
+            style={[styles.cell, styles.colTotal, styles.cellText, styles.boldText]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+          >
             {item.total !== null ? formatCurrency(item.total) : '-'}
           </Text>
 
@@ -436,8 +441,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   colName: {
-    flex: 4,
+    flex: 3.2,
     paddingRight: 5,
+    minWidth: 0,
   },
   colVolume: {
     flex: 1.5,
@@ -454,17 +460,24 @@ const styles = StyleSheet.create({
     paddingRight: 5,
   },
   colTotal: {
-    flex: 2.5,
+    flex: 2,
     textAlign: 'right',
+    minWidth: 0,
+    paddingRight: 4,
   },
   colActions: {
-    width: 65,
+    width: 82,
+    flexShrink: 0,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 4,
+    zIndex: 2,
   },
   actionBtn: {
-    padding: 4,
+    width: 24,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     padding: 20,

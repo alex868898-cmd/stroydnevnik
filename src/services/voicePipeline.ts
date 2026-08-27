@@ -36,6 +36,23 @@ export async function runVoicePipeline(audioUri: string): Promise<VoicePipelineR
 }
 
 /**
+ * Runs the same parsing pipeline for text entered in the compact composer.
+ */
+export async function runTextPipeline(text: string): Promise<ParsedWorkLog> {
+  const transcript = text.trim();
+  if (!transcript) {
+    throw new Error('Введіть опис виконаних робіт');
+  }
+
+  const [projects, catalog] = await Promise.all([
+    getProjects(),
+    getPriceCatalog(),
+  ]);
+
+  return parseWorkTranscript(transcript, projects, catalog);
+}
+
+/**
  * Saves parsed segments to Supabase as individual work logs.
  * Returns the created WorkLog objects.
  */

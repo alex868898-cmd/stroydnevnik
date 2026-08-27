@@ -10,6 +10,7 @@ import { formatDate, formatCurrency } from '../../lib/formatters';
 import { WorkLog, WorkItem, Project } from '../../lib/types';
 import { ReportItemTable } from '../../components/pdf/ReportItemTable';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
+import { TopTabBar } from '../../components/navigation/TopTabBar';
 
 interface DrillDownItem {
   logId: string;
@@ -578,6 +579,8 @@ export default function ProjectsScreen() {
           <Ionicons name="add-circle" size={32} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
+
+      <TopTabBar />
 
       {/* Projects List */}
       <ScrollView 

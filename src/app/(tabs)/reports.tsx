@@ -12,6 +12,8 @@ import { generateReportCSV } from '../../services/excel';
 import { shareReportFile } from '../../services/shareReport';
 import { Project, WorkLog, WorkItem, EstimateHistory } from '../../lib/types';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
+import { TopTabBar } from '../../components/navigation/TopTabBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface EstimateDisplayItem {
   logId: string;
@@ -20,6 +22,7 @@ interface EstimateDisplayItem {
 }
 
 export default function ReportsScreen() {
+  const insets = useSafeAreaInsets();
   const { projects, loading: loadingProjects } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   
@@ -350,9 +353,12 @@ export default function ReportsScreen() {
       
       // Reload UI to refresh any state, but items will NOT disappear
       loadReportData();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      Alert.alert('Помилка експорту', 'Не вдалося згенерувати або надіслати файл');
+      Alert.alert(
+        'Помилка експорту',
+        e?.message || 'Не вдалося згенерувати або надіслати файл'
+      );
     } finally {
       setLoadingData(false);
     }
@@ -382,6 +388,8 @@ export default function ReportsScreen() {
           <Text style={styles.headerTitle}>Кошториси робіт</Text>
         </View>
       </View>
+
+      <TopTabBar />
 
       {/* Period Filter Buttons */}
       <View style={styles.filterSection}>
@@ -481,7 +489,7 @@ export default function ReportsScreen() {
       </View>
 
       {/* Export / Sharing Action Bar at Bottom */}
-      <View style={styles.exportBar}>
+      <View style={[styles.exportBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Всього до виплати:</Text>
           <Text style={styles.totalValue}>{formatCurrency(totalAmount)}</Text>

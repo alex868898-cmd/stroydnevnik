@@ -16,6 +16,7 @@ import { Project, WorkLog, ClarificationPrompt, ParsedWorkLog, WorkItem } from '
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateWorkLogEarnings } from '../../lib/workLogUtils';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TopTabBar } from '../../components/navigation/TopTabBar';
 
 export default function JournalScreen() {
   const { projects, loading: loadingProjects } = useProjects();
@@ -304,20 +305,7 @@ export default function JournalScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Top Header Row */}
       <View style={styles.header}>
-        <View style={styles.tabPillContainer}>
-          <TouchableOpacity style={[styles.tabPillItem, styles.tabPillItemActive]}>
-            <Text style={[styles.tabPillText, styles.tabPillTextActive]}>Журнал</Text>
-            <View style={styles.activeLine} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.tabPillItem} onPress={() => router.replace('/(tabs)/projects')}>
-            <Text style={styles.tabPillText}>Проєкти</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.tabPillItem} onPress={() => router.replace('/(tabs)/reports')}>
-            <Text style={styles.tabPillText}>Звіти</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.screenTitle}>Журнал робіт</Text>
 
         <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
           <Ionicons name="settings-outline" size={24} color="#FFF" />
@@ -342,6 +330,8 @@ export default function JournalScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <TopTabBar />
 
       {/* Horizontal Projects Tabs Selector */}
       <View style={styles.tabsWrapper}>
@@ -444,7 +434,7 @@ export default function JournalScreen() {
       </ScrollView>
 
       {/* Voice/Text Input Section at the Bottom */}
-      <View style={styles.recorderContainer}>
+      <View style={[styles.recorderContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <VoiceRecorder
           onRecordingFinished={handleRecordingFinished}
           onSendText={handleTextInput}
@@ -486,7 +476,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 10,
     paddingHorizontal: 20,
-    paddingBottom: 15,
+    paddingBottom: 8,
+  },
+  screenTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: '700',
   },
   tabPillContainer: {
     flexDirection: 'row',
@@ -532,21 +527,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: COLORS.card,
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     marginHorizontal: 20,
     marginBottom: 12,
   },
   earningsLabel: {
-    fontSize: 13,
+    fontSize: 11,
     color: COLORS.textSecondary,
     marginBottom: 2,
   },
   earningsAmount: {
-    fontSize: 18,
+    fontSize: 26,
     fontWeight: 'bold',
     color: COLORS.text,
   },
@@ -702,7 +697,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.cardBorder,
-    paddingVertical: 15,
+    paddingTop: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
