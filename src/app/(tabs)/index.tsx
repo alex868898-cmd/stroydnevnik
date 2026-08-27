@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useProjects } from '../../hooks/useProjects';
 import { useWorkLogs } from '../../hooks/useWorkLogs';
@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateWorkLogEarnings } from '../../lib/workLogUtils';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TopTabBar } from '../../components/navigation/TopTabBar';
+import { pickAndRecognizeReceipt, saveReceipt } from '../../services/receipts';
 
 export default function JournalScreen() {
   const { projects, loading: loadingProjects } = useProjects();
@@ -233,6 +234,36 @@ export default function JournalScreen() {
     }
   };
 
+  const handleAddReceipt = async () => {
+    if (!activeProjectId) {
+      Alert.alert('Оберіть об’єкт', 'Спочатку оберіть проєкт, до якого належать матеріали.');
+      return;
+    }
+    setPipelineProcessing(true);
+    setProcessingStatus('Розпізнавання чека…');
+    try {
+      const recognized = await pickAndRecognizeReceipt();
+      if (!recognized) return;
+      const savedLog = await saveLog({
+        project_id: activeProjectId,
+        work_date: new Date().toISOString().split('T')[0],
+        voice_transcript: recognized.vendor ? `Чек: ${recognized.vendor}` : 'Чек на матеріали',
+        work_items: [{ action: recognized.vendor ? `Матеріали — ${recognized.vendor}` : 'Матеріали', workType: 'Матеріали', volume: 1, unit: 'чек', pricePerUnit: recognized.total, total: recognized.total, priceFromCatalog: false }],
+        total_amount: recognized.total,
+        volumes_confirmed: true,
+        is_day_off: false,
+      });
+      await saveReceipt({ ...recognized, projectId: activeProjectId, workLogId: savedLog.id });
+      await refreshLogs();
+      Alert.alert('Чек додано', `Матеріали: ${formatCurrency(recognized.total)}`);
+    } catch (error: any) {
+      Alert.alert('Не вдалося додати чек', error?.message || 'Спробуйте інше фото');
+    } finally {
+      setPipelineProcessing(false);
+      setProcessingStatus('');
+    }
+  };
+
   const handleMoveItemPrompt = (logId: string, itemIndex: number) => {
     const list = sortedProjects.filter(p => p.id !== activeProjectId);
     if (list.length === 0) {
@@ -266,17 +297,18 @@ export default function JournalScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Top Header Row */}
-      <View style={styles.header}>
+      <View style={styles.topArea}>
+        {/* Top Header Row */}
+        <View style={styles.header}>
         <Text style={styles.screenTitle}>Журнал робіт</Text>
 
         <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
           <Ionicons name="settings-outline" size={24} color="#FFF" />
         </TouchableOpacity>
-      </View>
+        </View>
 
       {/* Earnings Dashboard (Compact Card matching the screenshot) */}
-      <View style={styles.dashboardCompact}>
+        <View style={styles.dashboardCompact}>
         <View>
           <Text style={styles.earningsLabel}>Зароблено сьогодні:</Text>
           <Text style={styles.earningsAmount}>
@@ -284,6 +316,7 @@ export default function JournalScreen() {
           </Text>
         </View>
         
+        </View>
       </View>
 
       <TopTabBar />
@@ -389,14 +422,17 @@ export default function JournalScreen() {
       </ScrollView>
 
       {/* Voice/Text Input Section at the Bottom */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={[styles.recorderContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <VoiceRecorder
           onRecordingFinished={handleRecordingFinished}
           onSendText={handleTextInput}
+          onAddReceipt={handleAddReceipt}
           isProcessing={pipelineProcessing}
           processingStatus={processingStatus}
         />
       </View>
+      </KeyboardAvoidingView>
 
       {/* Settings Modal */}
       <SettingsModal
@@ -424,6 +460,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  topArea: {
+    height: 116,
   },
   header: {
     flexDirection: 'row',

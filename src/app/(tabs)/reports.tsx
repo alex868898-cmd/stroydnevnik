@@ -15,6 +15,8 @@ import { calculateItemsTotal } from '../../lib/workLogUtils';
 import { TopTabBar } from '../../components/navigation/TopTabBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateWheelPicker } from '../../components/date/DateWheelPicker';
+import { getContractorProfile } from '../../services/contractorProfile';
+import { getReceiptImages } from '../../services/receipts';
 
 const toLocalDateString = (date: Date) => {
   const year = date.getFullYear();
@@ -315,12 +317,16 @@ export default function ReportsScreen() {
       let mimeType = '';
 
       if (type === 'pdf') {
+        const contractor = await getContractorProfile();
+        const receiptImages = await getReceiptImages(selectedProjectId, dateRange.startDate, dateRange.endDate);
         fileUri = await generateReportPDF({
           project,
           periodStart: dateRange.startDate,
           periodEnd: dateRange.endDate,
           items,
-          totalAmount
+          totalAmount,
+          contractor,
+          receiptImages,
         });
         mimeType = 'application/pdf';
       } else {
@@ -697,7 +703,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    paddingTop: 60,
+    height: 116,
+    paddingTop: 52,
     paddingHorizontal: 20,
     paddingBottom: 15,
   },

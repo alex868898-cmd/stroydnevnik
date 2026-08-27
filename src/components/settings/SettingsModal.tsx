@@ -9,6 +9,7 @@ import { saveDailyReminderSettings, saveWeeklyReminderSettings, syncReminderSche
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../../lib/constants';
 import { supabase, clearCatalogCache } from '../../services/supabase';
+import { getContractorProfile, saveContractorProfile } from '../../services/contractorProfile';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -46,6 +47,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const [showMarketPrices, setShowMarketPrices] = useState(false);
   const [loadingMarketPrices, setLoadingMarketPrices] = useState(false);
   const [marketPricesList, setMarketPricesList] = useState<AggregatedPriceStat[]>([]);
+  const [contractorName, setContractorName] = useState('');
+  const [contractorPhone, setContractorPhone] = useState('');
+  const [savingContractor, setSavingContractor] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -89,6 +93,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
       if (storedWeeklyEnabled) setWeeklyEnabled(storedWeeklyEnabled !== 'false');
       if (storedWeeklyDay) setWeeklyDay(parseInt(storedWeeklyDay));
       if (storedWeeklyHour) setWeeklyHour(parseInt(storedWeeklyHour));
+
+      const contractor = await getContractorProfile();
+      setContractorName(contractor.name);
+      setContractorPhone(contractor.phone);
       
     } catch (e) {
       console.error('Failed to load settings', e);
@@ -238,6 +246,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
     Alert.alert('Успішно', 'Кеш каталогу розцінок очищено. Його буде оновлено при наступному запиті.');
   };
 
+  const handleSaveContractor = async () => {
+    if (!contractorName.trim()) {
+      Alert.alert('Помилка', 'Вкажіть назву організації або ім’я підрядника');
+      return;
+    }
+    setSavingContractor(true);
+    try {
+      await saveContractorProfile({ name: contractorName, phone: contractorPhone });
+      Alert.alert('Збережено', 'Дані підрядника будуть додані до PDF-звітів');
+    } finally {
+      setSavingContractor(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Вихід з додатку',
@@ -284,6 +306,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
           </View>
 
           <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+            <Text style={styles.sectionTitle}>Дані підрядника для PDF</Text>
+            <View style={styles.card}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Організація або ім’я</Text>
+                <TextInput style={styles.textInput} value={contractorName} onChangeText={setContractorName} placeholder="Напр. Stroykeeper або Сергій" placeholderTextColor={COLORS.textMuted} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Контактний телефон</Text>
+                <TextInput style={styles.textInput} value={contractorPhone} onChangeText={setContractorPhone} keyboardType="phone-pad" placeholder="+380…" placeholderTextColor={COLORS.textMuted} />
+              </View>
+              <TouchableOpacity style={styles.saveRemindersBtn} onPress={handleSaveContractor} disabled={savingContractor}>
+                {savingContractor ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveRemindersBtnText}>Зберегти дані підрядника</Text>}
+              </TouchableOpacity>
+            </View>
+
             {/* SECURITY SECTION */}
             <Text style={styles.sectionTitle}>Безпека та локальний захист</Text>
             <View style={styles.card}>

@@ -1,0 +1,79 @@
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { supabase } from './supabase';
+
+export interface ReceiptAttachment {
+  id: string;
+  total: number;
+  vendor: string | null;
+  storage_path: string;
+}
+
+export async function pickAndRecognizeReceipt() {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    quality: 0.7,
+    base64: true,
+  });
+  if (result.canceled || !result.assets[0]) return null;
+  const asset = result.assets[0];
+  if (!asset.base64) throw new Error('Не вдалося прочитати зображення чека');
+
+  const mimeType = asset.mimeType || 'image/jpeg';
+  const { data, error } = await supabase.functions.invoke('receipt-ocr', {
+    body: { imageBase64: asset.base64, mimeType },
+  });
+  if (error) throw error;
+  const total = Number(data?.total);
+  if (!Number.isFinite(total) || total <= 0) throw new Error('Не вдалося визначити підсумкову суму чека');
+  return { asset, total, vendor: data?.vendor || null, receiptDate: data?.date || null };
+}
+
+export async function saveReceipt(params: {
+  asset: ImagePicker.ImagePickerAsset;
+  projectId: string | null;
+  workLogId: string;
+  total: number;
+  vendor: string | null;
+  receiptDate: string | null;
+}) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Потрібно увійти в обліковий запис');
+  const extension = params.asset.mimeType?.includes('png') ? 'png' : 'jpg';
+  const path = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
+  const bytes = await (await fetch(params.asset.uri)).arrayBuffer();
+  const { error: uploadError } = await supabase.storage.from('receipts').upload(path, bytes, {
+    contentType: params.asset.mimeType || 'image/jpeg',
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+  const { error } = await supabase.from('receipts').insert({
+    user_id: user.id,
+    project_id: params.projectId,
+    work_log_id: params.workLogId,
+    storage_path: path,
+    total: params.total,
+    vendor: params.vendor,
+    receipt_date: params.receiptDate,
+  });
+  if (error) {
+    await supabase.storage.from('receipts').remove([path]);
+    throw error;
+  }
+}
+
+export async function getReceiptImages(projectId: string, startDate: string, endDate: string) {
+  const { data, error } = await supabase.from('receipts').select('*')
+    .eq('project_id', projectId).gte('created_at', `${startDate}T00:00:00`).lte('created_at', `${endDate}T23:59:59`);
+  if (error) throw error;
+  const images: string[] = [];
+  for (const receipt of (data || []) as ReceiptAttachment[]) {
+    const { data: signed } = await supabase.storage.from('receipts').createSignedUrl(receipt.storage_path, 120);
+    if (!signed?.signedUrl || !FileSystem.cacheDirectory) continue;
+    const local = `${FileSystem.cacheDirectory}receipt_${receipt.id}.jpg`;
+    await FileSystem.downloadAsync(signed.signedUrl, local);
+    const base64 = await FileSystem.readAsStringAsync(local, { encoding: FileSystem.EncodingType.Base64 });
+    images.push(`data:image/jpeg;base64,${base64}`);
+  }
+  return images;
+}

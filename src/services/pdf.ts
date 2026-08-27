@@ -2,6 +2,7 @@ import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Project, WorkItem } from '../lib/types';
 import { formatCurrency, formatDate } from '../lib/formatters';
+import { ContractorProfile } from './contractorProfile';
 
 export interface ReportData {
   project: Project;
@@ -9,13 +10,15 @@ export interface ReportData {
   periodEnd: string;
   items: WorkItem[];
   totalAmount: number;
+  contractor?: ContractorProfile;
+  receiptImages?: string[];
 }
 
 /**
  * Generates an elegant PDF document for project estimates using expo-print
  */
 export async function generateReportPDF(data: ReportData): Promise<string> {
-  const { project, periodStart, periodEnd, items, totalAmount } = data;
+  const { project, periodStart, periodEnd, items, totalAmount, contractor, receiptImages = [] } = data;
   
   const itemsHtml = items.map((item, index) => `
     <tr class="${index % 2 === 0 ? 'even' : 'odd'}">
@@ -144,6 +147,8 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
         </div>
 
         <table class="info-table">
+          ${contractor?.name ? `<tr><td class="info-label">Підрядник:</td><td class="info-value"><strong>${contractor.name}</strong></td></tr>` : ''}
+          ${contractor?.phone ? `<tr><td class="info-label">Телефон:</td><td class="info-value">${contractor.phone}</td></tr>` : ''}
           <tr>
             <td class="info-label">Об'єкт:</td>
             <td class="info-value">${project.name}</td>
@@ -189,6 +194,7 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
         </div>
 
         <div class="footer">
+          ${receiptImages.length ? `<div style="page-break-before: always; text-align:left;"><h2>Підтвердження витрат — чеки</h2>${receiptImages.map((src, index) => `<div style="margin:18px 0; page-break-inside:avoid;"><p><strong>Чек ${index + 1}</strong></p><img src="${src}" style="max-width:100%; max-height:680px; object-fit:contain;" /></div>`).join('')}</div>` : ''}
           <p>Дякуємо за співпрацю! Документ є офіційним звітом про виконані роботи.</p>
         </div>
       </body>

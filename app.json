@@ -51,6 +51,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Дозвольте доступ до фото, щоб додавати чеки до звітів.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#3B82F6"

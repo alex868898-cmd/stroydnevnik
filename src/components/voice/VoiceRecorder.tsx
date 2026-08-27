@@ -7,6 +7,7 @@ import { COLORS } from '../../lib/constants';
 interface VoiceRecorderProps {
   onRecordingFinished: (uri: string) => void;
   onSendText: (text: string) => void;
+  onAddReceipt: () => void;
   isProcessing: boolean;
   processingStatus: string;
 }
@@ -14,6 +15,7 @@ interface VoiceRecorderProps {
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onRecordingFinished,
   onSendText,
+  onAddReceipt,
   isProcessing,
   processingStatus,
 }) => {
@@ -128,6 +130,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       )}
 
       <View style={styles.composer}>
+        <TouchableOpacity style={styles.addButton} onPress={onAddReceipt} disabled={isProcessing || isRecording} accessibilityLabel="Додати чек">
+          <Ionicons name="add" size={25} color={COLORS.text} />
+        </TouchableOpacity>
         <TextInput
           style={styles.textInput}
           value={text}
@@ -261,6 +266,14 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     color: COLORS.text,
     fontSize: 15,
+  },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
   },
   sendButton: {
     width: 40,
