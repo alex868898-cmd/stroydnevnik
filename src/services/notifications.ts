@@ -81,7 +81,7 @@ export async function syncReminderSchedules(): Promise<void> {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Час записати роботи! 🏗️',
-        body: 'Зафіксуй виконані сьогодні роботи голосом у СтройДневник.',
+        body: 'Зафіксуй виконані сьогодні роботи голосом у KOSHTOR.',
         sound: true,
       },
       trigger: {
