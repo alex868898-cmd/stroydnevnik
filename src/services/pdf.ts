@@ -1,5 +1,4 @@
 import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system/legacy';
 import { Project, WorkItem } from '../lib/types';
 import { formatCurrency, formatDate } from '../lib/formatters';
 import { ContractorProfile } from './contractorProfile';
@@ -205,18 +204,7 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
     html: htmlContent,
     base64: false,
   });
-
-  if (!FileSystem.documentDirectory) {
-    throw new Error('Сховище документів недоступне');
-  }
-
-  const safeProjectName = project.name
-    .normalize('NFKD')
-    .replace(/[^\p{L}\p{N}_-]+/gu, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 50) || 'proekt';
-  const destination = `${FileSystem.documentDirectory}koshtorys_${safeProjectName}_${Date.now()}.pdf`;
-  await FileSystem.copyAsync({ from: uri, to: destination });
-
-  return destination;
+  // On Android (especially Expo Go), the temporary Print file may be shareable
+  // but not readable by FileSystem.copyAsync. Share the fresh URI directly.
+  return uri;
 }
