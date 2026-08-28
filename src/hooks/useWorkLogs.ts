@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { WorkLog, WorkItem } from '../lib/types';
 import * as db from '../services/supabase';
 import { calculateItemsTotal } from '../lib/workLogUtils';
+import { toLocalISODate } from '../lib/formatters';
 
 // Module-level in-memory cache to persist between tab switches
 let cachedTodayLogs: WorkLog[] | null = null;
@@ -14,8 +15,8 @@ const updateCache = (newLogs: WorkLog[]) => {
 };
 
 export function useWorkLogs(dateStr?: string) {
-  const targetDate = dateStr || new Date().toISOString().split('T')[0];
-  const isToday = targetDate === new Date().toISOString().split('T')[0];
+  const targetDate = dateStr || toLocalISODate();
+  const isToday = targetDate === toLocalISODate();
 
   const [workLogs, setWorkLogs] = useState<WorkLog[]>(isToday && cachedTodayLogs ? cachedTodayLogs : []);
   const [loading, setLoading] = useState(isToday ? !cachedTodayLogs : true);

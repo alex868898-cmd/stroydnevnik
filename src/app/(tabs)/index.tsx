@@ -6,7 +6,7 @@ import { useWorkLogs } from '../../hooks/useWorkLogs';
 import { useEditWorkItem } from '../../hooks/useEditWorkItem';
 import { runVoicePipeline, saveParsedSegments, runTextPipeline } from '../../services/voicePipeline';
 import { getPriceCatalog } from '../../services/supabase';
-import { formatCurrency } from '../../lib/formatters';
+import { formatCurrency, toLocalISODate } from '../../lib/formatters';
 import { COLORS, STORAGE_KEYS } from '../../lib/constants';
 import { VoiceRecorder } from '../../components/voice/VoiceRecorder';
 import { ClarificationModal } from '../../components/voice/ClarificationModal';
@@ -246,7 +246,7 @@ export default function JournalScreen() {
       if (!recognized) return;
       const savedLog = await saveLog({
         project_id: activeProjectId,
-        work_date: new Date().toISOString().split('T')[0],
+        work_date: toLocalISODate(),
         voice_transcript: recognized.vendor ? `Чек: ${recognized.vendor}` : 'Чек на матеріали',
         work_items: [{ itemType: 'material', action: recognized.vendor ? `Матеріали — ${recognized.vendor}` : 'Матеріали', workType: 'Матеріали', volume: 1, unit: 'чек', pricePerUnit: recognized.total, total: recognized.total, priceFromCatalog: false }],
         total_amount: recognized.total,

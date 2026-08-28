@@ -110,9 +110,10 @@ export async function getReceiptImages(projectId: string, startDate: string, end
       const originalDataUri = `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`;
       try {
         const context = ImageManipulator.manipulate(originalDataUri);
-        context.resize({ width: 1400, height: null });
+        // Keep PDF memory usage predictable on lower-RAM Android devices.
+        context.resize({ width: 1100, height: null });
         const rendered = await context.renderAsync();
-        const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
+        const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.72, base64: true });
         images.push(normalized.base64 ? `data:image/jpeg;base64,${normalized.base64}` : originalDataUri);
       } catch {
         if (mimeType === 'image/jpeg' || mimeType === 'image/png') images.push(originalDataUri);

@@ -4,11 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useProjects } from '../../hooks/useProjects';
 import { supabase } from '../../services/supabase';
 import { getDateRange, PeriodType, DateRange } from '../../lib/dateRange';
-import { formatCurrency, formatDate } from '../../lib/formatters';
+import { formatCurrency, formatDate, toLocalISODate } from '../../lib/formatters';
 import { COLORS } from '../../lib/constants';
 import { ReportItemTable } from '../../components/pdf/ReportItemTable';
 import { generateReportPDF } from '../../services/pdf';
-import { generateReportCSV } from '../../services/excel';
+import { generateReportExcel } from '../../services/excel';
 import { shareReportFile } from '../../services/shareReport';
 import { Project, WorkLog, WorkItem, EstimateHistory } from '../../lib/types';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
@@ -309,14 +309,14 @@ export default function ReportsScreen() {
         });
         mimeType = 'application/pdf';
       } else {
-        fileUri = await generateReportCSV({
+        fileUri = await generateReportExcel({
           project,
           periodStart: dateRange.startDate,
           periodEnd: dateRange.endDate,
           items,
           totalAmount
         });
-        mimeType = 'text/csv';
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       }
 
       // Save this export in estimate_history for audit trail / tracking
@@ -337,7 +337,7 @@ export default function ReportsScreen() {
         work_type: item.action,
         price: item.pricePerUnit || 0,
         region: 'ukraine',
-        recorded_at: new Date().toISOString().split('T')[0]
+        recorded_at: toLocalISODate()
       }));
       
       if (statsPayload.length > 0) {

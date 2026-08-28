@@ -14,6 +14,13 @@ export interface ReportData {
   receiptImages?: string[];
 }
 
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
 /**
  * Generates an elegant PDF document for project estimates using expo-print
  */
@@ -32,9 +39,9 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
       : '';
     return `${section}
     <tr class="${index % 2 === 0 ? 'even' : 'odd'}">
-      <td class="col-name">${item.action}</td>
+      <td class="col-name">${escapeHtml(item.action)}</td>
       <td class="col-volume">${item.volume !== null ? item.volume : '-'}</td>
-      <td class="col-unit">${item.unit || '-'}</td>
+      <td class="col-unit">${escapeHtml(item.unit || '-')}</td>
       <td class="col-price">${formatCurrency(item.pricePerUnit)}</td>
       <td class="col-total">${formatCurrency(item.total)}</td>
     </tr>
@@ -47,7 +54,7 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Кошторис - ${project.name}</title>
+        <title>Кошторис - ${escapeHtml(project.name)}</title>
         <style>
           body {
             font-family: 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
@@ -166,16 +173,16 @@ export async function generateReportPDF(data: ReportData): Promise<string> {
         </div>
 
         <table class="info-table">
-          ${contractor?.name ? `<tr><td class="info-label">Підрядник:</td><td class="info-value"><strong>${contractor.name}</strong></td></tr>` : ''}
-          ${contractor?.phone ? `<tr><td class="info-label">Телефон:</td><td class="info-value">${contractor.phone}</td></tr>` : ''}
+          ${contractor?.name ? `<tr><td class="info-label">Підрядник:</td><td class="info-value"><strong>${escapeHtml(contractor.name)}</strong></td></tr>` : ''}
+          ${contractor?.phone ? `<tr><td class="info-label">Телефон:</td><td class="info-value">${escapeHtml(contractor.phone)}</td></tr>` : ''}
           <tr>
             <td class="info-label">Об'єкт:</td>
-            <td class="info-value">${project.name}</td>
+            <td class="info-value">${escapeHtml(project.name)}</td>
           </tr>
           ${project.address ? `
           <tr>
             <td class="info-label">Адреса:</td>
-            <td class="info-value">${project.address}</td>
+            <td class="info-value">${escapeHtml(project.address)}</td>
           </tr>` : ''}
           <tr>
             <td class="info-label">Період:</td>

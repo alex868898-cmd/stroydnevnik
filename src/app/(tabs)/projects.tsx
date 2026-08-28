@@ -6,7 +6,7 @@ import { ProjectCard } from '../../components/projects/ProjectCard';
 import { COLORS } from '../../lib/constants';
 import { supabase } from '../../services/supabase';
 import { ProjectStatus, getStatusInfo } from '../../lib/projectStatus';
-import { formatDate, formatCurrency } from '../../lib/formatters';
+import { formatDate, formatCurrency, toLocalISODate } from '../../lib/formatters';
 import { WorkLog, WorkItem, Project } from '../../lib/types';
 import { ReportItemTable } from '../../components/pdf/ReportItemTable';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
@@ -39,7 +39,7 @@ export default function ProjectsScreen() {
   const [showAddWorkModal, setShowAddWorkModal] = useState(false);
 
   // Form states for history work items
-  const [workDate, setWorkDate] = useState(new Date().toISOString().split('T')[0]);
+  const [workDate, setWorkDate] = useState(toLocalISODate());
   const [workAction, setWorkAction] = useState('');
   const [workVolume, setWorkVolume] = useState('');
   const [workUnit, setWorkUnit] = useState('м²');
@@ -370,7 +370,7 @@ export default function ProjectsScreen() {
           <TouchableOpacity 
             style={styles.addWorkBtn} 
             onPress={() => {
-              setWorkDate(new Date().toISOString().split('T')[0]);
+              setWorkDate(toLocalISODate());
               setShowAddWorkModal(true);
             }}
           >

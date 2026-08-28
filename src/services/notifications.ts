@@ -13,7 +13,8 @@ if (!isExpoGo && Platform.OS !== 'web') {
     Notifications = require('expo-notifications');
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
-        shouldShowAlert: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
       }),
@@ -32,6 +33,18 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   }
   
   try {
+    // Android 13+ only shows the permission prompt after at least one
+    // notification channel exists.
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Нагадування KOSHTOR',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#3B82F6',
+        sound: 'default',
+      });
+    }
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     
@@ -40,15 +53,6 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       finalStatus = status;
     }
     
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
-    }
-
     return finalStatus === 'granted';
   } catch (e) {
     console.error('Error requesting notifications permissions:', e);
@@ -60,14 +64,14 @@ export async function requestNotificationPermissions(): Promise<boolean> {
  * Synchronizes scheduled notifications based on user settings stored in AsyncStorage.
  * Clears all existing notifications and reschedules them (Runs only in standalone APK).
  */
-export async function syncReminderSchedules(): Promise<void> {
+export async function syncReminderSchedules(): Promise<boolean> {
   if (Platform.OS === 'web' || isExpoGo || !Notifications) {
-    return; // Skip scheduling in Expo Go / Web
+    return true; // Skip scheduling in Expo Go / Web
   }
 
   try {
     const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) return;
+    if (!hasPermission) return false;
 
     // Cancel all pending notifications before rescheduling
     await Notifications.cancelAllScheduledNotificationsAsync();
@@ -85,9 +89,10 @@ export async function syncReminderSchedules(): Promise<void> {
         sound: true,
       },
       trigger: {
+        type: 'daily',
+        channelId: 'default',
         hour: dailyHour,
         minute: dailyMin,
-        repeats: true,
       },
     });
 
@@ -111,10 +116,11 @@ export async function syncReminderSchedules(): Promise<void> {
           sound: true,
         },
         trigger: {
+          type: 'weekly',
+          channelId: 'default',
           weekday: expoWeekday,
           hour: weeklyHour,
           minute: 0,
-          repeats: true,
         },
       });
     }
@@ -135,13 +141,36 @@ export async function syncReminderSchedules(): Promise<void> {
             body: `Не забудь вказати об'єми для: ${pendingVolumesDesc}`,
             sound: true,
           },
-          trigger: tomorrow,
+          trigger: {
+            type: 'date',
+            date: tomorrow,
+            channelId: 'default',
+          },
         });
       }
     }
+    return true;
   } catch (error) {
     console.error('Error syncing notifications in standalone build:', error);
+    return false;
   }
+}
+
+export async function saveReminderSettings(
+  dailyHour: number,
+  dailyMinute: number,
+  weeklyEnabled: boolean,
+  weeklyDay: number,
+  weeklyHour: number,
+): Promise<boolean> {
+  await AsyncStorage.multiSet([
+    [STORAGE_KEYS.REMINDER_HOUR, String(dailyHour)],
+    [STORAGE_KEYS.REMINDER_MINUTE, String(dailyMinute)],
+    [STORAGE_KEYS.WEEKLY_REMINDER_ENABLED, weeklyEnabled ? 'true' : 'false'],
+    [STORAGE_KEYS.WEEKLY_REMINDER_DAY, String(weeklyDay)],
+    [STORAGE_KEYS.WEEKLY_REMINDER_HOUR, String(weeklyHour)],
+  ]);
+  return syncReminderSchedules();
 }
 
 /**

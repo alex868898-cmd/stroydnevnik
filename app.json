@@ -3,7 +3,7 @@
     "name": "KOSHTOR",
     "slug": "stroydnevnik",
     "owner": "sergey86s-team",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "stroydnevnik",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.stroydnevnik",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -25,7 +25,8 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.SCHEDULE_EXACT_ALARM"
       ]
     },
     "web": {
@@ -56,13 +57,14 @@
         {
           "photosPermission": "Дозвольте доступ до фото, щоб додавати чеки до звітів.",
           "cameraPermission": false,
-          "microphonePermission": false
+          "microphonePermission": "Дозвольте KOSHTOR використовувати мікрофон для запису виконаних робіт."
         }
       ],
       [
         "expo-notifications",
         {
-          "color": "#3B82F6"
+          "color": "#3B82F6",
+          "defaultChannel": "default"
         }
       ]
     ],

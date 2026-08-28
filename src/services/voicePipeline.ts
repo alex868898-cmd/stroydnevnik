@@ -3,6 +3,7 @@ import { parseWorkTranscript } from './gpt';
 import { getProjects, getPriceCatalog, saveWorkLog } from './supabase';
 import { ParsedWorkLog, ParsedSegment, WorkLog } from '../lib/types';
 import { calculateItemsTotal, hasPendingVolumes } from '../lib/workLogUtils';
+import { toLocalISODate } from '../lib/formatters';
 
 export interface VoicePipelineResult {
   transcript: string;
@@ -61,7 +62,7 @@ export async function saveParsedSegments(
   transcript: string,
   workDateStr?: string
 ): Promise<WorkLog[]> {
-  const targetDate = workDateStr || new Date().toISOString().split('T')[0];
+  const targetDate = workDateStr || toLocalISODate();
   const savedLogs: WorkLog[] = [];
 
   for (const segment of segments) {

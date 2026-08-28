@@ -4,9 +4,11 @@ jspm_packages/
 
 # Build outputs
 dist/
+dist-qa*/
 build/
 .next/
 out/
+.expo/
 
 # IDE files
 .vscode/

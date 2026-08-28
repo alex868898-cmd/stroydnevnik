@@ -23,6 +23,10 @@ export async function shareReportFile(fileUri: string, mimeType: string, dialogT
   await Sharing.shareAsync(fileUri, {
     mimeType,
     dialogTitle,
-    UTI: mimeType === 'text/csv' ? 'public.comma-separated-values-text' : 'com.adobe.pdf',
+    UTI: mimeType.includes('spreadsheet')
+      ? 'org.openxmlformats.spreadsheetml.sheet'
+      : mimeType === 'text/csv'
+        ? 'public.comma-separated-values-text'
+        : 'com.adobe.pdf',
   });
 }

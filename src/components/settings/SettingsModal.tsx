@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Modal, TouchableOpacity, ScrollView, Switch, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, Modal, TouchableOpacity, ScrollView, Switch, Alert, TextInput, ActivityIndicator, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, DEFAULT_NOTIFICATIONS } from '../../lib/constants';
 import { useAuthGate } from '../../contexts/AuthGateContext';
 import { hasPinSet, setPin, deletePin } from '../../services/pinAuth';
 import { isBiometricHardwareAvailable, isBiometricEnrolled, isBiometricEnabled, setBiometricEnabled } from '../../services/biometricAuth';
-import { saveDailyReminderSettings, saveWeeklyReminderSettings, syncReminderSchedules } from '../../services/notifications';
+import { saveReminderSettings } from '../../services/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../../lib/constants';
 import { supabase, clearCatalogCache } from '../../services/supabase';
 import { getContractorProfile, saveContractorProfile } from '../../services/contractorProfile';
 import { importPriceFile } from '../../services/priceKnowledge';
+import { toLocalISODate } from '../../lib/formatters';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -110,7 +111,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
     try {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
+      const ninetyDaysAgoStr = toLocalISODate(ninetyDaysAgo);
 
       const { data, error } = await supabase
         .from('price_statistics')
@@ -249,9 +250,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
 
   const handleSaveReminders = async () => {
     try {
-      await saveDailyReminderSettings(dailyHour, dailyMinute);
-      await saveWeeklyReminderSettings(weeklyEnabled, weeklyDay, weeklyHour);
-      Alert.alert('Збережено', 'Налаштування нагадувань оновлено');
+      const enabled = await saveReminderSettings(dailyHour, dailyMinute, weeklyEnabled, weeklyDay, weeklyHour);
+      if (enabled) {
+        Alert.alert('Збережено', 'Налаштування нагадувань оновлено');
+      } else {
+        Alert.alert(
+          'Сповіщення вимкнені',
+          'Дозвольте KOSHTOR надсилати сповіщення у налаштуваннях телефону.',
+          [
+            { text: 'Пізніше', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
     } catch (e) {
       Alert.alert('Помилка', 'Не вдалося оновити нагадування');
     }

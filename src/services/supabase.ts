@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { Project, WorkLog, PriceCatalog, EstimateHistory, WorkItem } from '../lib/types';
+import { toLocalISODate } from '../lib/formatters';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -127,7 +128,7 @@ export async function deleteProject(id: string): Promise<void> {
 // Work Logs CRUD
 // =========================================================================
 export async function getTodayWorkLogs(dateStr?: string): Promise<WorkLog[]> {
-  const targetDate = dateStr || new Date().toISOString().split('T')[0];
+  const targetDate = dateStr || toLocalISODate();
   const { data, error } = await supabase
     .from('work_logs')
     .select('*')
