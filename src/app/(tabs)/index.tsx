@@ -379,7 +379,12 @@ export default function JournalScreen() {
       </View>
 
       {/* Main Records List / Scroll */}
-      <ScrollView style={styles.recordsScroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.recordsScroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {loadingLogs ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 50 }} />
         ) : isDayOffToday ? (

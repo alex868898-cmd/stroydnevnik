@@ -6,6 +6,15 @@ import {
 
 export type MicrophonePermissionResult = 'granted' | 'denied' | 'blocked';
 
+export async function hasMicrophonePermission(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  }
+
+  const permission = await getRecordingPermissionsAsync();
+  return permission.granted;
+}
+
 /**
  * Requests the platform microphone permission.
  *

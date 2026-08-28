@@ -12,6 +12,8 @@ import { supabase, clearCatalogCache } from '../../services/supabase';
 import { getContractorProfile, saveContractorProfile } from '../../services/contractorProfile';
 import { importPriceFile } from '../../services/priceKnowledge';
 import { toLocalISODate } from '../../lib/formatters';
+import Constants from 'expo-constants';
+import { hasMicrophonePermission, requestMicrophonePermission } from '../../services/microphonePermission';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -53,6 +55,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const [contractorPhone, setContractorPhone] = useState('');
   const [savingContractor, setSavingContractor] = useState(false);
   const [importingPrices, setImportingPrices] = useState(false);
+  const [microphoneGranted, setMicrophoneGranted] = useState(false);
+  const [requestingMicrophone, setRequestingMicrophone] = useState(false);
+
+  const appVersion = Constants.expoConfig?.version ?? '1.0.6';
+  const androidVersionCode = Constants.expoConfig?.android?.versionCode ?? 7;
 
   useEffect(() => {
     if (visible) {
@@ -100,6 +107,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
       const contractor = await getContractorProfile();
       setContractorName(contractor.name);
       setContractorPhone(contractor.phone);
+      setMicrophoneGranted(await hasMicrophonePermission());
       
     } catch (e) {
       console.error('Failed to load settings', e);
@@ -271,6 +279,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const handleClearCache = async () => {
     clearCatalogCache();
     Alert.alert('Успішно', 'Кеш каталогу розцінок очищено. Його буде оновлено при наступному запиті.');
+  };
+
+  const handleMicrophonePermission = async () => {
+    setRequestingMicrophone(true);
+    try {
+      const permission = await requestMicrophonePermission();
+      const granted = permission === 'granted';
+      setMicrophoneGranted(granted);
+
+      if (granted) {
+        Alert.alert('Мікрофон підключено', 'Голосове введення готове до роботи.');
+        return;
+      }
+
+      Alert.alert(
+        'Доступ до мікрофона не надано',
+        permission === 'blocked'
+          ? 'Android заблокував повторний запит. Відкрийте налаштування KOSHTOR та дозвольте використання мікрофона.'
+          : 'Натисніть кнопку ще раз, щоб повторити системний запит Android.',
+        [
+          { text: 'Закрити', style: 'cancel' },
+          { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+        ],
+      );
+    } finally {
+      setRequestingMicrophone(false);
+    }
   };
 
   const handleSaveContractor = async () => {
@@ -554,6 +589,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
             {/* SYSTEM CACHE */}
             <Text style={styles.sectionTitle}>Системні налаштування</Text>
             <View style={styles.card}>
+              <TouchableOpacity style={styles.actionRow} onPress={handleMicrophonePermission} disabled={requestingMicrophone}>
+                <Ionicons
+                  name={microphoneGranted ? 'mic-circle' : 'mic-circle-outline'}
+                  size={24}
+                  color={microphoneGranted ? COLORS.accent : COLORS.primary}
+                  style={styles.actionIcon}
+                />
+                <View style={styles.settingTextGroup}>
+                  <Text style={styles.settingLabel}>Доступ до мікрофона</Text>
+                  <Text style={styles.settingDesc}>
+                    {microphoneGranted ? 'Дозвіл надано' : 'Натисніть, щоб відкрити системний запит Android'}
+                  </Text>
+                </View>
+                {requestingMicrophone && <ActivityIndicator color={COLORS.primary} />}
+              </TouchableOpacity>
+
               <TouchableOpacity style={styles.actionRow} onPress={handleClearCache}>
                 <Ionicons name="refresh-circle-outline" size={24} color={COLORS.primary} style={styles.actionIcon} />
                 <View style={styles.settingTextGroup}>
@@ -568,6 +619,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
               <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.logoutText}>Вийти з облікового запису</Text>
             </TouchableOpacity>
+            <Text style={styles.versionText}>KOSHTOR {appVersion} · Android {androidVersionCode}</Text>
           </ScrollView>
         </View>
       </Modal>
@@ -872,6 +924,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  versionText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 14,
   },
 
   // Market prices list styles
