@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking as NativeLinking, Platform } from 'react-native';
-import { Href, Slot, usePathname, useRouter, useSegments } from 'expo-router';
+import { Slot, useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { AuthGateProvider, useAuthGate } from '../contexts/AuthGateContext';
 import { PinEntry } from '../components/auth/PinEntry';
@@ -8,6 +8,7 @@ import { COLORS } from '../lib/constants';
 import { syncReminderSchedules } from '../services/notifications';
 import { supabase } from '../services/supabase';
 import { requestMicrophonePermission } from '../services/microphonePermission';
+import ResetPasswordScreen from './(auth)/reset-password';
 
 function RootLayoutContent() {
   const {
@@ -20,7 +21,6 @@ function RootLayoutContent() {
     signOut,
   } = useAuthGate();
   const segments = useSegments();
-  const pathname = usePathname();
   const router = useRouter();
   const url = Linking.useURL();
   const microphonePromptStarted = useRef(false);
@@ -134,12 +134,11 @@ function RootLayoutContent() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    const onResetPasswordScreen = pathname === '/reset-password';
 
+    // The recovery form is rendered directly by the root layout. Keeping it
+    // outside regular route redirects prevents auth guards or browser history
+    // from replacing it with the main application.
     if (isPasswordRecovery) {
-      if (!onResetPasswordScreen) {
-        router.replace('/reset-password' as Href);
-      }
       return;
     }
 
@@ -154,7 +153,7 @@ function RootLayoutContent() {
         router.replace('/(tabs)');
       }
     }
-  }, [session, loading, isLocalLocked, isPasswordRecovery, segments, pathname, router]);
+  }, [session, loading, isLocalLocked, isPasswordRecovery, segments, router]);
 
   // Sync scheduled push reminders on login
   useEffect(() => {
@@ -162,6 +161,15 @@ function RootLayoutContent() {
       syncReminderSchedules().catch(e => console.error('Error syncing notifications:', e));
     }
   }, [session, isLocalLocked, isPasswordRecovery]);
+
+  if (isPasswordRecovery) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+        <ResetPasswordScreen />
+      </View>
+    );
+  }
 
   if (loading) {
     return (

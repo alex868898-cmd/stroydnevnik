@@ -44,9 +44,8 @@ export default function ResetPasswordScreen() {
       if (error) throw error;
 
       completePasswordRecovery();
-      Alert.alert('Пароль змінено', 'Тепер ви можете входити з новим паролем.', [
-        { text: 'Продовжити', onPress: () => router.replace('/(tabs)') },
-      ]);
+      router.replace('/(tabs)');
+      Alert.alert('Пароль змінено', 'Тепер ви можете входити з новим паролем.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не вдалося змінити пароль.';
       Alert.alert('Помилка', message);
