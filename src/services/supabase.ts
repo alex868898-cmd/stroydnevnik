@@ -8,17 +8,24 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // Expo Router renders web routes once in Node.js before the browser opens.
-// AsyncStorage's web implementation accesses `window`, which does not exist
-// during that server pass. This adapter safely returns no session on the
-// server and uses browser localStorage after hydration.
+// Do not reference the `window` identifier here: the development SSR bundle
+// can evaluate this module in Node before browser globals exist. `globalThis`
+// is available in both environments and exposes localStorage only in-browser.
+const getWebLocalStorage = (): Storage | null => {
+  if (typeof globalThis === 'undefined' || !('localStorage' in globalThis)) {
+    return null;
+  }
+
+  return globalThis.localStorage;
+};
+
 const webAuthStorage = {
-  getItem: async (key: string) =>
-    typeof window === 'undefined' ? null : window.localStorage.getItem(key),
+  getItem: async (key: string) => getWebLocalStorage()?.getItem(key) ?? null,
   setItem: async (key: string, value: string) => {
-    if (typeof window !== 'undefined') window.localStorage.setItem(key, value);
+    getWebLocalStorage()?.setItem(key, value);
   },
   removeItem: async (key: string) => {
-    if (typeof window !== 'undefined') window.localStorage.removeItem(key);
+    getWebLocalStorage()?.removeItem(key);
   },
 };
 
