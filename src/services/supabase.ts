@@ -1,35 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import { Platform } from 'react-native';
 import { Project, WorkLog, PriceCatalog, EstimateHistory, WorkItem } from '../lib/types';
 import { toLocalISODate } from '../lib/formatters';
+import { authStorage } from './authStorage';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-
-// Expo Router renders web routes once in Node.js before the browser opens.
-// Do not reference the `window` identifier here: the development SSR bundle
-// can evaluate this module in Node before browser globals exist. `globalThis`
-// is available in both environments and exposes localStorage only in-browser.
-const getWebLocalStorage = (): Storage | null => {
-  if (typeof globalThis === 'undefined' || !('localStorage' in globalThis)) {
-    return null;
-  }
-
-  return globalThis.localStorage;
-};
-
-const webAuthStorage = {
-  getItem: async (key: string) => getWebLocalStorage()?.getItem(key) ?? null,
-  setItem: async (key: string, value: string) => {
-    getWebLocalStorage()?.setItem(key, value);
-  },
-  removeItem: async (key: string) => {
-    getWebLocalStorage()?.removeItem(key);
-  },
-};
-
-const authStorage = Platform.OS === 'web' ? webAuthStorage : AsyncStorage;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
