@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking as NativeLinking, Platform } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import * as Linking from 'expo-linking';
 import { AuthGateProvider, useAuthGate } from '../contexts/AuthGateContext';
 import { PinEntry } from '../components/auth/PinEntry';
 import { COLORS } from '../lib/constants';
 import { syncReminderSchedules } from '../services/notifications';
 import { supabase } from '../services/supabase';
+import { requestMicrophonePermission } from '../services/microphonePermission';
 
 function RootLayoutContent() {
   const { session, loading, isLocalLocked, unlockLocal, signOut } = useAuthGate();
@@ -26,17 +26,14 @@ function RootLayoutContent() {
       microphonePromptStarted.current = true;
 
       try {
-        let permission = await getRecordingPermissionsAsync();
-        if (permission.granted) return;
-
-        if (permission.canAskAgain) {
-          permission = await requestRecordingPermissionsAsync();
-          if (permission.granted) return;
-        }
+        const permission = await requestMicrophonePermission();
+        if (permission === 'granted') return;
 
         Alert.alert(
           'Потрібен доступ до мікрофона',
-          'Без цього дозволу голосове введення не працюватиме. Дозвольте KOSHTOR використовувати мікрофон у налаштуваннях телефону.',
+          permission === 'blocked'
+            ? 'Android більше не показує системний запит для KOSHTOR. Відкрийте налаштування застосунку та увімкніть «Мікрофон».'
+            : 'Ви не надали доступ до мікрофона. Натисніть кнопку мікрофона в журналі, щоб повторити системний запит.',
           [
             { text: 'Пізніше', style: 'cancel' },
             { text: 'Відкрити налаштування', onPress: () => NativeLinking.openSettings() },

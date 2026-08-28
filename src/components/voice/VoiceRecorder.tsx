@@ -5,10 +5,9 @@ import {
   useAudioRecorder,
   RecordingPresets,
   useAudioRecorderState,
-  getRecordingPermissionsAsync,
-  requestRecordingPermissionsAsync,
 } from 'expo-audio';
 import { COLORS } from '../../lib/constants';
+import { requestMicrophonePermission } from '../../services/microphonePermission';
 
 interface VoiceRecorderProps {
   onRecordingFinished: (uri: string) => void;
@@ -84,16 +83,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
   const startRecording = async () => {
     try {
-      let permission = await getRecordingPermissionsAsync();
+      const permission = await requestMicrophonePermission();
 
-      if (!permission.granted && permission.canAskAgain) {
-        permission = await requestRecordingPermissionsAsync();
-      }
-
-      if (!permission.granted) {
+      if (permission !== 'granted') {
         Alert.alert(
           'Потрібен доступ до мікрофона',
-          'Дозвольте KOSHTOR використовувати мікрофон у налаштуваннях телефону.',
+          permission === 'blocked'
+            ? 'Android заблокував повторний системний запит. Відкрийте налаштування KOSHTOR і увімкніть дозвіл «Мікрофон».'
+            : 'Без дозволу мікрофона голосове введення не працюватиме. Натисніть мікрофон ще раз, щоб повторити системний запит.',
           [
             { text: 'Скасувати', style: 'cancel' },
             { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
@@ -107,7 +104,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       await audioRecorder.record();
     } catch (error) {
       console.error('Failed to start recording:', error);
-      Alert.alert('Помилка', 'Не вдалося почати запис аудіо. Перевірте дозволи мікрофона.');
+      const details = error instanceof Error ? error.message : String(error);
+      Alert.alert(
+        'Не вдалося почати запис',
+        `Перевірте дозвіл мікрофона для KOSHTOR.\n\n${details}`,
+        [
+          { text: 'Закрити', style: 'cancel' },
+          { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+        ],
+      );
     }
   };
 

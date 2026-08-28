@@ -296,7 +296,11 @@ export default function JournalScreen() {
   const projectLogsWithWorks = displayedLogs.filter(l => l.work_items.length > 0);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { paddingTop: insets.top }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
       <View style={styles.topArea}>
         {/* Top Header Row */}
         <View style={styles.header}>
@@ -422,7 +426,6 @@ export default function JournalScreen() {
       </ScrollView>
 
       {/* Voice/Text Input Section at the Bottom */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={[styles.recorderContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <VoiceRecorder
           onRecordingFinished={handleRecordingFinished}
@@ -432,7 +435,6 @@ export default function JournalScreen() {
           processingStatus={processingStatus}
         />
       </View>
-      </KeyboardAvoidingView>
 
       {/* Settings Modal */}
       <SettingsModal
@@ -452,7 +454,7 @@ export default function JournalScreen() {
           setTempTranscript('');
         }}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
