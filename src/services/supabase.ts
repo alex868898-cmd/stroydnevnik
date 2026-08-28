@@ -1,14 +1,32 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 import { Project, WorkLog, PriceCatalog, EstimateHistory, WorkItem } from '../lib/types';
 import { toLocalISODate } from '../lib/formatters';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Expo Router renders web routes once in Node.js before the browser opens.
+// AsyncStorage's web implementation accesses `window`, which does not exist
+// during that server pass. This adapter safely returns no session on the
+// server and uses browser localStorage after hydration.
+const webAuthStorage = {
+  getItem: async (key: string) =>
+    typeof window === 'undefined' ? null : window.localStorage.getItem(key),
+  setItem: async (key: string, value: string) => {
+    if (typeof window !== 'undefined') window.localStorage.setItem(key, value);
+  },
+  removeItem: async (key: string) => {
+    if (typeof window !== 'undefined') window.localStorage.removeItem(key);
+  },
+};
+
+const authStorage = Platform.OS === 'web' ? webAuthStorage : AsyncStorage;
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
