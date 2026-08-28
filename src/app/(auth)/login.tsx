@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Linking from 'expo-linking';
 import { supabase } from '../../services/supabase';
 import { COLORS } from '../../lib/constants';
 import { hasPinSet, setPin } from '../../services/pinAuth';
@@ -27,10 +26,18 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      // Linking.createURL() may keep the custom native scheme in a web bundle.
+      // For web recovery, Supabase must return to the browser origin that sent
+      // the request; native builds keep using the installed-app deep link.
+      const redirectTo =
+        Platform.OS === 'web' && typeof window !== 'undefined'
+          ? `${window.location.origin}/`
+          : 'stroydnevnik://';
+
+      console.info(`[auth] Password recovery redirect: ${redirectTo}`);
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        // Keep the already-approved native callback. The layout detects the
-        // recovery type and routes to the password form itself.
-        redirectTo: Platform.OS === 'web' ? Linking.createURL('/') : 'stroydnevnik://',
+        redirectTo,
       });
 
       if (error) {
