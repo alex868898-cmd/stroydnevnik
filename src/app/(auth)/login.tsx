@@ -26,12 +26,16 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // Linking.createURL() may keep the custom native scheme in a web bundle.
+      const browserOrigin =
+        typeof globalThis !== 'undefined' && 'location' in globalThis
+          ? globalThis.location.origin
+          : null;
+
       // For web recovery, Supabase must return to the browser origin that sent
       // the request; native builds keep using the installed-app deep link.
       const redirectTo =
-        Platform.OS === 'web' && typeof window !== 'undefined'
-          ? `${window.location.origin}/`
+        Platform.OS === 'web' && browserOrigin
+          ? `${browserOrigin}/`
           : 'stroydnevnik://';
 
       console.info(`[auth] Password recovery redirect: ${redirectTo}`);
