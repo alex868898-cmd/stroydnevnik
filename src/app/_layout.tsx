@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking as NativeLinking, Platform } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
+import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import * as Linking from 'expo-linking';
 import { AuthGateProvider, useAuthGate } from '../contexts/AuthGateContext';
 import { PinEntry } from '../components/auth/PinEntry';
@@ -13,6 +14,49 @@ function RootLayoutContent() {
   const segments = useSegments();
   const router = useRouter();
   const url = Linking.useURL();
+  const microphonePromptStarted = useRef(false);
+
+  // Ask for microphone access as soon as the application has finished loading.
+  // If Android no longer allows the system prompt, direct the user to App settings.
+  useEffect(() => {
+    if (loading || Platform.OS === 'web' || microphonePromptStarted.current) return;
+
+    const timer = setTimeout(async () => {
+      if (microphonePromptStarted.current) return;
+      microphonePromptStarted.current = true;
+
+      try {
+        let permission = await getRecordingPermissionsAsync();
+        if (permission.granted) return;
+
+        if (permission.canAskAgain) {
+          permission = await requestRecordingPermissionsAsync();
+          if (permission.granted) return;
+        }
+
+        Alert.alert(
+          'Потрібен доступ до мікрофона',
+          'Без цього дозволу голосове введення не працюватиме. Дозвольте KOSHTOR використовувати мікрофон у налаштуваннях телефону.',
+          [
+            { text: 'Пізніше', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => NativeLinking.openSettings() },
+          ],
+        );
+      } catch (error) {
+        console.error('Unable to request microphone permission on startup:', error);
+        Alert.alert(
+          'Не вдалося запросити доступ',
+          'Відкрийте налаштування KOSHTOR і дозвольте використання мікрофона.',
+          [
+            { text: 'Закрити', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => NativeLinking.openSettings() },
+          ],
+        );
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Deep Link Handling for email confirmation / oauth redirects
   useEffect(() => {

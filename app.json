@@ -3,7 +3,7 @@
     "name": "KOSHTOR",
     "slug": "stroydnevnik",
     "owner": "sergey86s-team",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "stroydnevnik",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.stroydnevnik",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
