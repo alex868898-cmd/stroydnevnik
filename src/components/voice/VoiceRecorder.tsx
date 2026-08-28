@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated, Alert, TextInput } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, Alert, TextInput, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAudioRecorder, RecordingPresets, useAudioRecorderState } from 'expo-audio';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  useAudioRecorderState,
+  getRecordingPermissionsAsync,
+  requestRecordingPermissionsAsync,
+} from 'expo-audio';
 import { COLORS } from '../../lib/constants';
 
 interface VoiceRecorderProps {
@@ -78,6 +84,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
   const startRecording = async () => {
     try {
+      let permission = await getRecordingPermissionsAsync();
+
+      if (!permission.granted && permission.canAskAgain) {
+        permission = await requestRecordingPermissionsAsync();
+      }
+
+      if (!permission.granted) {
+        Alert.alert(
+          'Потрібен доступ до мікрофона',
+          'Дозвольте KOSHTOR використовувати мікрофон у налаштуваннях телефону.',
+          [
+            { text: 'Скасувати', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+
       // Rule: prepareToRecordAsync перед каждым record
       await audioRecorder.prepareToRecordAsync();
       await audioRecorder.record();
