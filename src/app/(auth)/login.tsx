@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { supabase } from '../../services/supabase';
 import { COLORS } from '../../lib/constants';
 import { hasPinSet, setPin } from '../../services/pinAuth';
@@ -27,7 +28,9 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'stroydnevnik://',
+        // Keep the already-approved native callback. The layout detects the
+        // recovery type and routes to the password form itself.
+        redirectTo: Platform.OS === 'web' ? Linking.createURL('/') : 'stroydnevnik://',
       });
 
       if (error) {

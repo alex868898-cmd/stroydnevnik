@@ -9,6 +9,9 @@ interface AuthGateContextType {
   session: Session | null;
   loading: boolean;
   isLocalLocked: boolean;
+  isPasswordRecovery: boolean;
+  beginPasswordRecovery: () => void;
+  completePasswordRecovery: () => void;
   unlockLocal: () => void;
   lockLocal: () => void;
   signOut: () => Promise<void>;
@@ -22,6 +25,8 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLocalLocked, setIsLocalLocked] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const passwordRecoveryRef = React.useRef(false);
 
   // Initialize session and auth state listener
   useEffect(() => {
@@ -35,9 +40,18 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryRef.current = true;
+        setIsPasswordRecovery(true);
+        setIsLocalLocked(false);
+        setLoading(false);
+        return;
+      }
+
       if (session) {
         checkAndApplyLock();
       } else {
@@ -54,7 +68,17 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Determine if we need to lock the app locally
   const checkAndApplyLock = async () => {
     try {
+      if (passwordRecoveryRef.current) {
+        setIsLocalLocked(false);
+        return;
+      }
+
       const securityEnabled = await isLocalSecurityEnabled();
+      if (passwordRecoveryRef.current) {
+        setIsLocalLocked(false);
+        return;
+      }
+
       if (securityEnabled) {
         setIsLocalLocked(true);
         // Attempt automatic biometric prompt if enabled
@@ -83,6 +107,19 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsLocalLocked(false);
   };
 
+  const beginPasswordRecovery = React.useCallback(() => {
+    passwordRecoveryRef.current = true;
+    setIsPasswordRecovery(true);
+    setIsLocalLocked(false);
+    setLoading(false);
+  }, []);
+
+  const completePasswordRecovery = React.useCallback(() => {
+    passwordRecoveryRef.current = false;
+    setIsPasswordRecovery(false);
+    setIsLocalLocked(false);
+  }, []);
+
   const lockLocal = async () => {
     const securityEnabled = await isLocalSecurityEnabled();
     if (securityEnabled) {
@@ -95,6 +132,8 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);
+    passwordRecoveryRef.current = false;
+    setIsPasswordRecovery(false);
     setIsLocalLocked(false);
     setLoading(false);
   };
@@ -106,6 +145,9 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         session,
         loading,
         isLocalLocked,
+        isPasswordRecovery,
+        beginPasswordRecovery,
+        completePasswordRecovery,
         unlockLocal,
         lockLocal,
         signOut,

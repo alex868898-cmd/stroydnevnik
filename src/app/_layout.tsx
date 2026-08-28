@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking as NativeLinking, Platform } from 'react-native';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Href, Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { AuthGateProvider, useAuthGate } from '../contexts/AuthGateContext';
 import { PinEntry } from '../components/auth/PinEntry';
@@ -10,8 +10,17 @@ import { supabase } from '../services/supabase';
 import { requestMicrophonePermission } from '../services/microphonePermission';
 
 function RootLayoutContent() {
-  const { session, loading, isLocalLocked, unlockLocal, signOut } = useAuthGate();
+  const {
+    session,
+    loading,
+    isLocalLocked,
+    isPasswordRecovery,
+    beginPasswordRecovery,
+    unlockLocal,
+    signOut,
+  } = useAuthGate();
   const segments = useSegments();
+  const pathname = usePathname();
   const router = useRouter();
   const url = Linking.useURL();
   const microphonePromptStarted = useRef(false);
@@ -60,34 +69,35 @@ function RootLayoutContent() {
     const handleDeepLink = async (openedUrl: string) => {
       try {
         console.log('Opened app via deep link:', openedUrl);
-        
-        // 1. Try legacy getSessionFromUrl if it exists on the auth client
-        if (typeof (supabase.auth as any).getSessionFromUrl === 'function') {
-          const { error } = await (supabase.auth as any).getSessionFromUrl({ storeSession: true });
-          if (!error) {
-            console.log('Successfully handled deep link session using getSessionFromUrl');
-            return;
-          }
-        }
 
-        // 2. Fallback: Parse URL manually and call setSession
+        // Supabase may return auth values in the query string (PKCE) or hash
+        // fragment (implicit flow), depending on platform and configuration.
         const params: Record<string, string> = {};
         const hashIdx = openedUrl.indexOf('#');
         const queryIdx = openedUrl.indexOf('?');
-        const startIdx = hashIdx !== -1 ? hashIdx : queryIdx;
-        
-        if (startIdx !== -1) {
-          const paramString = openedUrl.substring(startIdx + 1);
+
+        const readParams = (paramString: string) => {
           const pairs = paramString.split('&');
           for (const pair of pairs) {
             const [key, value] = pair.split('=');
             if (key && value) {
-              params[decodeURIComponent(key)] = decodeURIComponent(value);
+              params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' '));
             }
           }
+        };
+
+        if (queryIdx !== -1) {
+          readParams(openedUrl.slice(queryIdx + 1, hashIdx === -1 ? undefined : hashIdx));
+        }
+        if (hashIdx !== -1) {
+          readParams(openedUrl.slice(hashIdx + 1));
         }
 
-        const { access_token, refresh_token } = params;
+        const { access_token, refresh_token, type, code } = params;
+
+        if (type === 'recovery') {
+          beginPasswordRecovery();
+        }
 
         if (access_token && refresh_token) {
           console.log('Found session tokens in deep link, updating session manually...');
@@ -101,6 +111,13 @@ function RootLayoutContent() {
           } else {
             console.log('Session successfully set from deep link. Logged in as:', data.user?.email);
           }
+        } else if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.error('Error exchanging auth code from deep link:', error);
+          } else {
+            console.log('Session successfully exchanged from deep link. Logged in as:', data.user?.email);
+          }
         }
       } catch (err) {
         console.error('Error in deep link processing:', err);
@@ -110,13 +127,21 @@ function RootLayoutContent() {
     if (url) {
       handleDeepLink(url);
     }
-  }, [url]);
+  }, [url, beginPasswordRecovery]);
 
   // Redirect logic based on Supabase session state
   useEffect(() => {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const onResetPasswordScreen = pathname === '/reset-password';
+
+    if (isPasswordRecovery) {
+      if (!onResetPasswordScreen) {
+        router.replace('/reset-password' as Href);
+      }
+      return;
+    }
 
     if (!session) {
       // No active session -> go to login
@@ -129,14 +154,14 @@ function RootLayoutContent() {
         router.replace('/(tabs)');
       }
     }
-  }, [session, loading, isLocalLocked, segments]);
+  }, [session, loading, isLocalLocked, isPasswordRecovery, segments, pathname, router]);
 
   // Sync scheduled push reminders on login
   useEffect(() => {
-    if (session && !isLocalLocked) {
+    if (session && !isLocalLocked && !isPasswordRecovery) {
       syncReminderSchedules().catch(e => console.error('Error syncing notifications:', e));
     }
-  }, [session, isLocalLocked]);
+  }, [session, isLocalLocked, isPasswordRecovery]);
 
   if (loading) {
     return (
@@ -147,7 +172,7 @@ function RootLayoutContent() {
   }
 
   // Local Security Gate: PIN/Biometric lock screen overlay
-  if (session && isLocalLocked) {
+  if (session && isLocalLocked && !isPasswordRecovery) {
     return (
       <View style={styles.lockContainer}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
