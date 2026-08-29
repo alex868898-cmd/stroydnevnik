@@ -5,6 +5,11 @@ import { supabase } from '../../services/supabase';
 import { COLORS } from '../../lib/constants';
 import { hasPinSet, setPin } from '../../services/pinAuth';
 import { setBiometricEnabled, isBiometricHardwareAvailable } from '../../services/biometricAuth';
+import {
+  clearPasswordRecoveryRequest,
+  markPasswordRecoveryRequested,
+  PASSWORD_RECOVERY_REDIRECT,
+} from '../../services/passwordRecovery';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -27,7 +32,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'stroydnevnik://',
+        redirectTo: PASSWORD_RECOVERY_REDIRECT,
       });
 
       if (error) {
@@ -36,6 +41,7 @@ export default function LoginScreen() {
         return;
       }
 
+      await markPasswordRecoveryRequested();
       setLoading(false);
       Alert.alert('Лист надіслано', 'Лист надіслано на вашу пошту');
       setShowForgotPassword(false);
@@ -64,6 +70,8 @@ export default function LoginScreen() {
         setLoading(false);
         return;
       }
+
+      await clearPasswordRecoveryRequest();
 
       // Check if user has PIN set up locally
       const pinSet = await hasPinSet();
