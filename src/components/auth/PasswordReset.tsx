@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../../services/supabase';
-import { clearPasswordRecoveryRequest } from '../../services/passwordRecovery';
+import { markPasswordRecoveryHandled } from '../../services/passwordRecovery';
 import { COLORS } from '../../lib/constants';
 
 interface PasswordResetProps {
@@ -28,7 +28,7 @@ export function PasswordReset({ linkLoading, linkError, onFinished }: PasswordRe
   const [passwordChanged, setPasswordChanged] = useState(false);
 
   const returnToLogin = async () => {
-    await clearPasswordRecoveryRequest();
+    await markPasswordRecoveryHandled();
     await supabase.auth.signOut();
     onFinished();
   };
@@ -59,7 +59,7 @@ export function PasswordReset({ linkLoading, linkError, onFinished }: PasswordRe
         return;
       }
 
-      await clearPasswordRecoveryRequest();
+      await markPasswordRecoveryHandled();
       await supabase.auth.signOut();
       setPasswordChanged(true);
     } catch (error) {
