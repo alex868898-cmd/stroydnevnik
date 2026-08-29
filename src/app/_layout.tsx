@@ -8,13 +8,30 @@ import { COLORS } from '../lib/constants';
 import { syncReminderSchedules } from '../services/notifications';
 import { supabase } from '../services/supabase';
 import { requestMicrophonePermission } from '../services/microphonePermission';
+import { PasswordReset } from '../components/auth/PasswordReset';
+import {
+  hasPendingPasswordRecovery,
+  parsePasswordRecoveryLink,
+} from '../services/passwordRecovery';
 
 function RootLayoutContent() {
-  const { session, loading, isLocalLocked, unlockLocal, signOut } = useAuthGate();
+  const {
+    session,
+    loading,
+    isLocalLocked,
+    isPasswordRecovery,
+    beginPasswordRecovery,
+    completePasswordRecovery,
+    unlockLocal,
+    signOut,
+  } = useAuthGate();
   const segments = useSegments();
   const router = useRouter();
-  const url = Linking.useURL();
+  const url = Linking.useLinkingURL();
   const microphonePromptStarted = useRef(false);
+  const handledUrl = useRef<string | null>(null);
+  const [recoveryLinkLoading, setRecoveryLinkLoading] = React.useState(false);
+  const [recoveryLinkError, setRecoveryLinkError] = React.useState<string | null>(null);
 
   // Ask for microphone access as soon as the application has finished loading.
   // If Android no longer allows the system prompt, direct the user to App settings.
@@ -55,66 +72,80 @@ function RootLayoutContent() {
     return () => clearTimeout(timer);
   }, [loading]);
 
-  // Deep Link Handling for email confirmation / oauth redirects
+  // Deep-link handling for email confirmation and password recovery.
   useEffect(() => {
     const handleDeepLink = async (openedUrl: string) => {
       try {
-        console.log('Opened app via deep link:', openedUrl);
-        
-        // 1. Try legacy getSessionFromUrl if it exists on the auth client
-        if (typeof (supabase.auth as any).getSessionFromUrl === 'function') {
-          const { error } = await (supabase.auth as any).getSessionFromUrl({ storeSession: true });
-          if (!error) {
-            console.log('Successfully handled deep link session using getSessionFromUrl');
-            return;
-          }
+        const parsed = parsePasswordRecoveryLink(openedUrl);
+        const pendingRecovery = await hasPendingPasswordRecovery();
+        const shouldRecover = parsed.isRecovery || pendingRecovery;
+
+        if (shouldRecover) {
+          beginPasswordRecovery();
+          setRecoveryLinkLoading(true);
+          setRecoveryLinkError(null);
         }
 
-        // 2. Fallback: Parse URL manually and call setSession
-        const params: Record<string, string> = {};
-        const hashIdx = openedUrl.indexOf('#');
-        const queryIdx = openedUrl.indexOf('?');
-        const startIdx = hashIdx !== -1 ? hashIdx : queryIdx;
-        
-        if (startIdx !== -1) {
-          const paramString = openedUrl.substring(startIdx + 1);
-          const pairs = paramString.split('&');
-          for (const pair of pairs) {
-            const [key, value] = pair.split('=');
-            if (key && value) {
-              params[decodeURIComponent(key)] = decodeURIComponent(value);
-            }
+        if (parsed.error) {
+          if (shouldRecover) {
+            setRecoveryLinkError('Посилання недійсне або застаріло. Запросіть новий лист.');
           }
+          return;
         }
 
-        const { access_token, refresh_token } = params;
-
-        if (access_token && refresh_token) {
-          console.log('Found session tokens in deep link, updating session manually...');
+        if (parsed.accessToken && parsed.refreshToken) {
           const { data, error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
+            access_token: parsed.accessToken,
+            refresh_token: parsed.refreshToken,
           });
 
           if (error) {
-            console.error('Error setting session from deep link:', error);
-          } else {
-            console.log('Session successfully set from deep link. Logged in as:', data.user?.email);
+            if (shouldRecover) {
+              setRecoveryLinkError('Не вдалося перевірити посилання. Запросіть новий лист.');
+            }
+            return;
           }
+
+          if (!data.session && shouldRecover) {
+            setRecoveryLinkError('Посилання не створило сеанс відновлення. Запросіть новий лист.');
+          }
+        } else if (parsed.code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(parsed.code);
+          if (error || (!data.session && shouldRecover)) {
+            if (shouldRecover) {
+              setRecoveryLinkError('Не вдалося перевірити посилання. Запросіть новий лист.');
+            }
+            return;
+          }
+        } else if (shouldRecover) {
+          setRecoveryLinkError('У посиланні немає даних для відновлення. Запросіть новий лист.');
         }
       } catch (err) {
         console.error('Error in deep link processing:', err);
+        setRecoveryLinkError('Не вдалося обробити посилання. Запросіть новий лист.');
+      } finally {
+        setRecoveryLinkLoading(false);
       }
     };
 
-    if (url) {
+    if (url && handledUrl.current !== url) {
+      handledUrl.current = url;
       handleDeepLink(url);
     }
-  }, [url]);
+  }, [url, beginPasswordRecovery]);
+
+  const finishPasswordRecovery = React.useCallback(() => {
+    completePasswordRecovery();
+    setRecoveryLinkError(null);
+    setRecoveryLinkLoading(false);
+    router.replace('/(auth)/login');
+  }, [completePasswordRecovery, router]);
 
   // Redirect logic based on Supabase session state
   useEffect(() => {
     if (loading) return;
+
+    if (isPasswordRecovery) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
@@ -129,14 +160,24 @@ function RootLayoutContent() {
         router.replace('/(tabs)');
       }
     }
-  }, [session, loading, isLocalLocked, segments]);
+  }, [session, loading, isLocalLocked, isPasswordRecovery, segments, router]);
 
   // Sync scheduled push reminders on login
   useEffect(() => {
-    if (session && !isLocalLocked) {
+    if (session && !isLocalLocked && !isPasswordRecovery) {
       syncReminderSchedules().catch(e => console.error('Error syncing notifications:', e));
     }
-  }, [session, isLocalLocked]);
+  }, [session, isLocalLocked, isPasswordRecovery]);
+
+  if (isPasswordRecovery) {
+    return (
+      <PasswordReset
+        linkLoading={recoveryLinkLoading}
+        linkError={recoveryLinkError}
+        onFinished={finishPasswordRecovery}
+      />
+    );
+  }
 
   if (loading) {
     return (
