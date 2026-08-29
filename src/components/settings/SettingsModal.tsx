@@ -58,8 +58,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const [microphoneGranted, setMicrophoneGranted] = useState(false);
   const [requestingMicrophone, setRequestingMicrophone] = useState(false);
 
-  const appVersion = Constants.expoConfig?.version ?? '1.0.6';
-  const androidVersionCode = Constants.expoConfig?.android?.versionCode ?? 7;
+  const appVersion = Constants.expoConfig?.version ?? '1.0.8';
+  const androidVersionCode = Constants.expoConfig?.android?.versionCode ?? 9;
 
   useEffect(() => {
     if (visible) {
