@@ -6,6 +6,7 @@ import { isLocalSecurityEnabled } from '../services/localAuth';
 import { authenticateBiometrics, isBiometricEnabled } from '../services/biometricAuth';
 import {
   hasPendingPasswordRecovery,
+  hasRecentlyHandledPasswordRecovery,
   parsePasswordRecoveryLink,
 } from '../services/passwordRecovery';
 
@@ -43,7 +44,10 @@ export const AuthGateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (initialUrl) {
           const parsed = parsePasswordRecoveryLink(initialUrl);
           const pendingRecovery = await hasPendingPasswordRecovery();
-          if (parsed.isRecovery || pendingRecovery) {
+          const alreadyHandled = parsed.isRecovery
+            ? await hasRecentlyHandledPasswordRecovery()
+            : false;
+          if (!alreadyHandled && (parsed.isRecovery || pendingRecovery)) {
             passwordRecoveryRef.current = true;
             if (!cancelled) {
               setIsPasswordRecovery(true);
