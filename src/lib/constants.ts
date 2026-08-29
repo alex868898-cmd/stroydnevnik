@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   PIN_HASH_ENCRYPTED: 'pin_hash_encrypted',
   CONTRACTOR_NAME: 'contractor_name',
   CONTRACTOR_PHONE: 'contractor_phone',
+  PASSWORD_RECOVERY_REQUESTED_AT: 'password_recovery_requested_at',
 };
 
 export const COLORS = {
