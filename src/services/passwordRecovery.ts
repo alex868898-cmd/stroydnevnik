@@ -4,6 +4,7 @@ import { STORAGE_KEYS } from '../lib/constants';
 export const PASSWORD_RECOVERY_REDIRECT = 'stroydnevnik://';
 
 const RECOVERY_REQUEST_TTL_MS = 60 * 60 * 1000;
+const RECOVERY_HANDLED_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface PasswordRecoveryLink {
   isRecovery: boolean;
@@ -57,10 +58,13 @@ export function parsePasswordRecoveryLink(url: string): PasswordRecoveryLink {
 }
 
 export async function markPasswordRecoveryRequested(): Promise<void> {
-  await AsyncStorage.setItem(
-    STORAGE_KEYS.PASSWORD_RECOVERY_REQUESTED_AT,
-    String(Date.now()),
-  );
+  await Promise.all([
+    AsyncStorage.setItem(
+      STORAGE_KEYS.PASSWORD_RECOVERY_REQUESTED_AT,
+      String(Date.now()),
+    ),
+    AsyncStorage.removeItem(STORAGE_KEYS.PASSWORD_RECOVERY_HANDLED_AT),
+  ]);
 }
 
 export async function hasPendingPasswordRecovery(): Promise<boolean> {
@@ -77,4 +81,26 @@ export async function hasPendingPasswordRecovery(): Promise<boolean> {
 
 export async function clearPasswordRecoveryRequest(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEYS.PASSWORD_RECOVERY_REQUESTED_AT);
+}
+
+export async function markPasswordRecoveryHandled(): Promise<void> {
+  await Promise.all([
+    AsyncStorage.setItem(
+      STORAGE_KEYS.PASSWORD_RECOVERY_HANDLED_AT,
+      String(Date.now()),
+    ),
+    clearPasswordRecoveryRequest(),
+  ]);
+}
+
+export async function hasRecentlyHandledPasswordRecovery(): Promise<boolean> {
+  const storedValue = await AsyncStorage.getItem(STORAGE_KEYS.PASSWORD_RECOVERY_HANDLED_AT);
+  const handledAt = Number(storedValue);
+
+  if (!Number.isFinite(handledAt) || Date.now() - handledAt > RECOVERY_HANDLED_TTL_MS) {
+    await AsyncStorage.removeItem(STORAGE_KEYS.PASSWORD_RECOVERY_HANDLED_AT);
+    return false;
+  }
+
+  return true;
 }
