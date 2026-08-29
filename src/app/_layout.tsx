@@ -11,6 +11,7 @@ import { requestMicrophonePermission } from '../services/microphonePermission';
 import { PasswordReset } from '../components/auth/PasswordReset';
 import {
   hasPendingPasswordRecovery,
+  hasRecentlyHandledPasswordRecovery,
   parsePasswordRecoveryLink,
 } from '../services/passwordRecovery';
 
@@ -77,6 +78,17 @@ function RootLayoutContent() {
     const handleDeepLink = async (openedUrl: string) => {
       try {
         const parsed = parsePasswordRecoveryLink(openedUrl);
+        const alreadyHandled = parsed.isRecovery
+          ? await hasRecentlyHandledPasswordRecovery()
+          : false;
+
+        if (alreadyHandled) {
+          completePasswordRecovery();
+          setRecoveryLinkError(null);
+          router.replace('/(auth)/login');
+          return;
+        }
+
         const pendingRecovery = await hasPendingPasswordRecovery();
         const shouldRecover = parsed.isRecovery || pendingRecovery;
 
@@ -132,7 +144,7 @@ function RootLayoutContent() {
       handledUrl.current = url;
       handleDeepLink(url);
     }
-  }, [url, beginPasswordRecovery]);
+  }, [url, beginPasswordRecovery, completePasswordRecovery, router]);
 
   const finishPasswordRecovery = React.useCallback(() => {
     completePasswordRecovery();
