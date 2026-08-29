@@ -619,7 +619,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
               <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.logoutText}>Вийти з облікового запису</Text>
             </TouchableOpacity>
-            <Text style={styles.versionText}>KOSHTOR {appVersion} · Android {androidVersionCode}</Text>
+            <Text style={styles.versionText}>KOSHTOR {appVersion} · Збірка {androidVersionCode}</Text>
           </ScrollView>
         </View>
       </Modal>
