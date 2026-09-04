@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { WorkLog, WorkItem } from '../lib/types';
 import * as db from '../services/supabase';
 import { calculateItemsTotal } from '../lib/workLogUtils';
+import { toLocalISODate } from '../lib/formatters';
 
 // Module-level in-memory cache to persist between tab switches
 let cachedTodayLogs: WorkLog[] | null = null;
+let cachedUserId: string | null = null;
 let listeners: Array<(logs: WorkLog[]) => void> = [];
 
 const updateCache = (newLogs: WorkLog[]) => {
@@ -13,8 +15,8 @@ const updateCache = (newLogs: WorkLog[]) => {
 };
 
 export function useWorkLogs(dateStr?: string) {
-  const targetDate = dateStr || new Date().toISOString().split('T')[0];
-  const isToday = targetDate === new Date().toISOString().split('T')[0];
+  const targetDate = dateStr || toLocalISODate();
+  const isToday = targetDate === toLocalISODate();
 
   const [workLogs, setWorkLogs] = useState<WorkLog[]>(isToday && cachedTodayLogs ? cachedTodayLogs : []);
   const [loading, setLoading] = useState(isToday ? !cachedTodayLogs : true);
@@ -34,6 +36,17 @@ export function useWorkLogs(dateStr?: string) {
   }, [isToday]);
 
   const fetchWorkLogs = useCallback(async (force = false) => {
+    const { data: { user } } = await db.supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    if (cachedUserId !== user.id) {
+      cachedTodayLogs = null;
+      cachedUserId = user.id;
+    }
+
     if (isToday && cachedTodayLogs && !force) {
       setWorkLogs(cachedTodayLogs);
       setLoading(false);
@@ -58,6 +71,18 @@ export function useWorkLogs(dateStr?: string) {
 
   useEffect(() => {
     fetchWorkLogs();
+    const { data: { subscription } } = db.supabase.auth.onAuthStateChange(event => {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        setTimeout(() => fetchWorkLogs(true), 0);
+      }
+      if (event === 'SIGNED_OUT') {
+        cachedTodayLogs = null;
+        cachedUserId = null;
+        setWorkLogs([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [fetchWorkLogs]);
 
   const saveLog = useCallback(async (logData: Omit<WorkLog, 'id' | 'user_id' | 'created_at'>) => {

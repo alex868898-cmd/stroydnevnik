@@ -13,6 +13,8 @@ export const STORAGE_KEYS = {
   WEEKLY_REMINDER_SNOOZE: 'weekly_reminder_snooze',
   BIOMETRIC_ENABLED: 'biometric_enabled', // 'true' | 'false'
   PIN_HASH_ENCRYPTED: 'pin_hash_encrypted',
+  CONTRACTOR_NAME: 'contractor_name',
+  CONTRACTOR_PHONE: 'contractor_phone',
 };
 
 export const COLORS = {

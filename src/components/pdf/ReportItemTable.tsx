@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { WorkItem, Project } from '../../lib/types';
 import { COLORS } from '../../lib/constants';
 import { formatCurrency } from '../../lib/formatters';
-import { supabase } from '../../services/supabase';
+import { getPriceRange } from '../../services/priceKnowledge';
 
 interface ReportItemTableProps {
   items: WorkItem[];
@@ -32,6 +32,7 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
   const [volumeVal, setVolumeVal] = useState('');
   const [unitText, setUnitText] = useState('');
   const [priceVal, setPriceVal] = useState('');
+  const [itemType, setItemType] = useState<'work' | 'material'>('work');
   const [selectedProjId, setSelectedProjId] = useState<string | null>(null);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   
@@ -45,32 +46,7 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     }
     
     try {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
-
-      const { data, error } = await supabase
-        .from('price_statistics')
-        .select('price')
-        .ilike('work_type', workType.trim())
-        .gt('recorded_at', ninetyDaysAgoStr);
-
-      if (error) throw error;
-
-      if (data && data.length >= 3) {
-        const prices = data.map(d => Number(d.price));
-        const priceMin = Math.min(...prices);
-        const priceMax = Math.max(...prices);
-        const priceAvg = Math.round(prices.reduce((sum, val) => sum + val, 0) / prices.length);
-        setMarketStats({
-          min: priceMin,
-          max: priceMax,
-          avg: priceAvg,
-          samples: prices.length
-        });
-      } else {
-        setMarketStats(null);
-      }
+      setMarketStats(await getPriceRange(workType));
     } catch (err) {
       console.warn('Failed to load market statistics inside table:', err);
       setMarketStats(null);
@@ -83,6 +59,7 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     setVolumeVal(item.volume !== null ? String(item.volume) : '');
     setUnitText(item.unit || '');
     setPriceVal(item.pricePerUnit !== null ? String(item.pricePerUnit) : '');
+    setItemType(item.itemType || 'work');
     setSelectedProjId(projectId);
     setShowProjectDropdown(false);
   };
@@ -112,13 +89,15 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     const total = volNum !== null && priceNum !== null ? volNum * priceNum : null;
 
     onEditItem(editIndex, {
+      itemType,
       action: actionText,
       workType: currentItem.workType,
       volume: volNum,
       unit: unitText,
       pricePerUnit: priceNum,
       total,
-      priceFromCatalog: currentItem.priceFromCatalog,
+      priceFromCatalog: priceNum === currentItem.pricePerUnit ? currentItem.priceFromCatalog : false,
+      priceWasSpoken: currentItem.priceWasSpoken,
     });
 
     if (selectedProjId !== projectId && onChangeProject) {
@@ -134,6 +113,7 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
     setVolumeVal('');
     setUnitText('');
     setPriceVal('');
+    setItemType('work');
     setMarketStats(null);
     setSelectedProjId(null);
     setShowProjectDropdown(false);
@@ -146,6 +126,10 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
       </View>
     );
   }
+
+  const orderedItems = items
+    .map((item, index) => ({ item, index, type: item.itemType || 'work' as const }))
+    .sort((a, b) => (a.type === b.type ? a.index - b.index : a.type === 'work' ? -1 : 1));
 
   return (
     <View style={styles.table}>
@@ -160,9 +144,15 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
       </View>
 
       {/* Table Rows */}
-      {items.map((item, index) => (
-        <View 
-          key={index} 
+      {orderedItems.map(({ item, index, type }, displayIndex) => (
+        <React.Fragment key={`${index}-${type}`}>
+        {(displayIndex === 0 || orderedItems[displayIndex - 1].type !== type) && (
+          <View style={styles.sectionRow}>
+            <Ionicons name={type === 'material' ? 'cube-outline' : 'hammer-outline'} size={16} color={COLORS.primary} />
+            <Text style={styles.sectionRowText}>{type === 'material' ? 'МАТЕРІАЛИ' : 'РОБОТИ'}</Text>
+          </View>
+        )}
+        <View
           style={[
             styles.row, 
             index % 2 === 0 ? styles.evenRow : styles.oddRow,
@@ -181,7 +171,12 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
           <Text style={[styles.cell, styles.colPrice, styles.cellText]}>
             {item.pricePerUnit !== null ? Math.round(item.pricePerUnit) : '-'}
           </Text>
-          <Text style={[styles.cell, styles.colTotal, styles.cellText, styles.boldText]}>
+          <Text
+            style={[styles.cell, styles.colTotal, styles.cellText, styles.boldText]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+          >
             {item.total !== null ? formatCurrency(item.total) : '-'}
           </Text>
 
@@ -217,6 +212,7 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
             </View>
           )}
         </View>
+        </React.Fragment>
       ))}
 
       {/* Edit Modal */}
@@ -229,6 +225,18 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Редагувати роботу</Text>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Тип позиції</Text>
+              <View style={styles.typeSelector}>
+                <TouchableOpacity style={[styles.typeButton, itemType === 'work' && styles.typeButtonActive]} onPress={() => setItemType('work')}>
+                  <Text style={[styles.typeButtonText, itemType === 'work' && styles.typeButtonTextActive]}>Робота</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.typeButton, itemType === 'material' && styles.typeButtonActive]} onPress={() => setItemType('material')}>
+                  <Text style={[styles.typeButtonText, itemType === 'material' && styles.typeButtonTextActive]}>Матеріал</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             
             <View style={styles.formGroup}>
               <Text style={styles.label}>Найменування роботи</Text>
@@ -277,9 +285,9 @@ export const ReportItemTable: React.FC<ReportItemTableProps> = ({
                 placeholderTextColor={COLORS.textMuted}
                 onFocus={() => fetchMarketStats(actionText)}
               />
-              {marketStats && marketStats.samples >= 3 && (
+              {marketStats && (
                 <Text style={styles.marketHint}>
-                  Ринок: від {marketStats.min} до {marketStats.max} грн (середня {marketStats.avg} грн)
+                  За внутрішньою базою: {marketStats.min}–{marketStats.max} грн. Рекомендуємо {marketStats.max} грн або середню {marketStats.avg} грн.
                 </Text>
               )}
             </View>
@@ -436,8 +444,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   colName: {
-    flex: 4,
+    flex: 3.2,
     paddingRight: 5,
+    minWidth: 0,
   },
   colVolume: {
     flex: 1.5,
@@ -454,17 +463,41 @@ const styles = StyleSheet.create({
     paddingRight: 5,
   },
   colTotal: {
-    flex: 2.5,
+    flex: 2,
     textAlign: 'right',
+    minWidth: 0,
+    paddingRight: 4,
   },
   colActions: {
-    width: 65,
+    width: 82,
+    flexShrink: 0,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 4,
+    zIndex: 2,
   },
   actionBtn: {
-    padding: 4,
+    width: 24,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: COLORS.primary + '18',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: COLORS.primary + '35',
+  },
+  sectionRowText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.7,
   },
   emptyContainer: {
     padding: 20,
@@ -517,6 +550,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: COLORS.text,
     fontSize: 15,
+  },
+  typeSelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  typeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.background,
+  },
+  typeButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  typeButtonText: {
+    color: COLORS.textSecondary,
+    fontWeight: '700',
+  },
+  typeButtonTextActive: {
+    color: '#fff',
   },
   modalActions: {
     flexDirection: 'row',

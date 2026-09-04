@@ -8,6 +8,7 @@ export interface Project {
 }
 
 export interface WorkItem {
+  itemType?: 'work' | 'material';
   action: string;
   workType: string;
   volume: number | null;
@@ -15,6 +16,7 @@ export interface WorkItem {
   pricePerUnit: number | null;
   total: number | null;
   priceFromCatalog: boolean;
+  priceWasSpoken?: boolean;
 }
 
 export interface WorkLog {

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useProjects } from '../../hooks/useProjects';
 import { useWorkLogs } from '../../hooks/useWorkLogs';
 import { useEditWorkItem } from '../../hooks/useEditWorkItem';
 import { runVoicePipeline, saveParsedSegments, runTextPipeline } from '../../services/voicePipeline';
 import { getPriceCatalog } from '../../services/supabase';
-import { formatCurrency } from '../../lib/formatters';
+import { formatCurrency, toLocalISODate } from '../../lib/formatters';
 import { COLORS, STORAGE_KEYS } from '../../lib/constants';
 import { VoiceRecorder } from '../../components/voice/VoiceRecorder';
 import { ClarificationModal } from '../../components/voice/ClarificationModal';
@@ -16,6 +16,8 @@ import { Project, WorkLog, ClarificationPrompt, ParsedWorkLog, WorkItem } from '
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateWorkLogEarnings } from '../../lib/workLogUtils';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TopTabBar } from '../../components/navigation/TopTabBar';
+import { pickAndRecognizeReceipt, saveReceipt } from '../../services/receipts';
 
 export default function JournalScreen() {
   const { projects, loading: loadingProjects } = useProjects();
@@ -88,43 +90,6 @@ export default function JournalScreen() {
       : workLogs;
     return relevantLogs.some(l => l.is_day_off);
   }, [workLogs, activeProjectId]);
-
-  const handleToggleDayOff = async () => {
-    if (isDayOffToday) {
-      // Turn day off OFF (delete the day off log)
-      const dayOffLog = workLogs.find(l => 
-        (activeProjectId ? l.project_id === activeProjectId : l.project_id === null) && l.is_day_off
-      );
-      if (dayOffLog) {
-        await removeLog(dayOffLog.id);
-        Alert.alert('Вихідний скасовано', 'Тепер ви можете додавати виконані роботи.');
-      }
-    } else {
-      // Turn day off ON
-      // Ensure we confirm first
-      Alert.alert(
-        'Встановити вихідний?',
-        'Сьогодні не буде нараховуватися заробіток. Усі наявні записи за сьогодні буде збережено.',
-        [
-          { text: 'Скасувать', style: 'cancel' },
-          {
-            text: 'Так, відпочиваю 🌴',
-            onPress: async () => {
-              await saveLog({
-                project_id: activeProjectId,
-                work_date: new Date().toISOString().split('T')[0],
-                voice_transcript: 'Сьогодні вихідний',
-                work_items: [],
-                total_amount: 0,
-                volumes_confirmed: true,
-                is_day_off: true
-              });
-            }
-          }
-        ]
-      );
-    }
-  };
 
   const handleRecordingFinished = async (uri: string) => {
     setPipelineProcessing(true);
@@ -269,6 +234,36 @@ export default function JournalScreen() {
     }
   };
 
+  const handleAddReceipt = async () => {
+    if (!activeProjectId) {
+      Alert.alert('Оберіть об’єкт', 'Спочатку оберіть проєкт, до якого належать матеріали.');
+      return;
+    }
+    setPipelineProcessing(true);
+    setProcessingStatus('Розпізнавання чека…');
+    try {
+      const recognized = await pickAndRecognizeReceipt();
+      if (!recognized) return;
+      const savedLog = await saveLog({
+        project_id: activeProjectId,
+        work_date: toLocalISODate(),
+        voice_transcript: recognized.vendor ? `Чек: ${recognized.vendor}` : 'Чек на матеріали',
+        work_items: [{ itemType: 'material', action: recognized.vendor ? `Матеріали — ${recognized.vendor}` : 'Матеріали', workType: 'Матеріали', volume: 1, unit: 'чек', pricePerUnit: recognized.total, total: recognized.total, priceFromCatalog: false }],
+        total_amount: recognized.total,
+        volumes_confirmed: true,
+        is_day_off: false,
+      });
+      await saveReceipt({ ...recognized, projectId: activeProjectId, workLogId: savedLog.id });
+      await refreshLogs();
+      Alert.alert('Чек додано', `Матеріали: ${formatCurrency(recognized.total)}`);
+    } catch (error: any) {
+      Alert.alert('Не вдалося додати чек', error?.message || 'Спробуйте інше фото');
+    } finally {
+      setPipelineProcessing(false);
+      setProcessingStatus('');
+    }
+  };
+
   const handleMoveItemPrompt = (logId: string, itemIndex: number) => {
     const list = sortedProjects.filter(p => p.id !== activeProjectId);
     if (list.length === 0) {
@@ -301,31 +296,23 @@ export default function JournalScreen() {
   const projectLogsWithWorks = displayedLogs.filter(l => l.work_items.length > 0);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Top Header Row */}
-      <View style={styles.header}>
-        <View style={styles.tabPillContainer}>
-          <TouchableOpacity style={[styles.tabPillItem, styles.tabPillItemActive]}>
-            <Text style={[styles.tabPillText, styles.tabPillTextActive]}>Журнал</Text>
-            <View style={styles.activeLine} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.tabPillItem} onPress={() => router.replace('/(tabs)/projects')}>
-            <Text style={styles.tabPillText}>Проєкти</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.tabPillItem} onPress={() => router.replace('/(tabs)/reports')}>
-            <Text style={styles.tabPillText}>Звіти</Text>
-          </TouchableOpacity>
-        </View>
+    <KeyboardAvoidingView
+      style={[styles.container, { paddingTop: insets.top }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
+      <View style={styles.topArea}>
+        {/* Top Header Row */}
+        <View style={styles.header}>
+        <Text style={styles.screenTitle}>Журнал робіт</Text>
 
         <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
           <Ionicons name="settings-outline" size={24} color="#FFF" />
         </TouchableOpacity>
-      </View>
+        </View>
 
       {/* Earnings Dashboard (Compact Card matching the screenshot) */}
-      <View style={styles.dashboardCompact}>
+        <View style={styles.dashboardCompact}>
         <View>
           <Text style={styles.earningsLabel}>Зароблено сьогодні:</Text>
           <Text style={styles.earningsAmount}>
@@ -333,15 +320,10 @@ export default function JournalScreen() {
           </Text>
         </View>
         
-        <TouchableOpacity 
-          style={[styles.dayOffBtnCompact, isDayOffToday && styles.dayOffBtnActive]} 
-          onPress={handleToggleDayOff}
-        >
-          <Text style={[styles.dayOffBtnTextCompact, isDayOffToday && styles.dayOffBtnTextActive]}>
-            {isDayOffToday ? '🌴 Вихідний' : '🌴 Відпочинок'}
-          </Text>
-        </TouchableOpacity>
+        </View>
       </View>
+
+      <TopTabBar />
 
       {/* Horizontal Projects Tabs Selector */}
       <View style={styles.tabsWrapper}>
@@ -397,7 +379,12 @@ export default function JournalScreen() {
       </View>
 
       {/* Main Records List / Scroll */}
-      <ScrollView style={styles.recordsScroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.recordsScroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {loadingLogs ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 50 }} />
         ) : isDayOffToday ? (
@@ -444,10 +431,11 @@ export default function JournalScreen() {
       </ScrollView>
 
       {/* Voice/Text Input Section at the Bottom */}
-      <View style={styles.recorderContainer}>
+      <View style={[styles.recorderContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <VoiceRecorder
           onRecordingFinished={handleRecordingFinished}
           onSendText={handleTextInput}
+          onAddReceipt={handleAddReceipt}
           isProcessing={pipelineProcessing}
           processingStatus={processingStatus}
         />
@@ -471,7 +459,7 @@ export default function JournalScreen() {
           setTempTranscript('');
         }}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -480,13 +468,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  topArea: {
+    height: 116,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: 10,
     paddingHorizontal: 20,
-    paddingBottom: 15,
+    paddingBottom: 8,
+  },
+  screenTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: '700',
   },
   tabPillContainer: {
     flexDirection: 'row',
@@ -532,21 +528,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: COLORS.card,
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     marginHorizontal: 20,
     marginBottom: 12,
   },
   earningsLabel: {
-    fontSize: 13,
+    fontSize: 11,
     color: COLORS.textSecondary,
     marginBottom: 2,
   },
   earningsAmount: {
-    fontSize: 18,
+    fontSize: 26,
     fontWeight: 'bold',
     color: COLORS.text,
   },
@@ -702,7 +698,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.cardBorder,
-    paddingVertical: 15,
+    paddingTop: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -67,9 +67,10 @@ ${catalogPrompt}
      - Не запитуй площу для послуг.
 
 3. **Співставлення з каталогом**:
+   - Встанови itemType = "material", якщо це придбаний або витрачений матеріал. Для виконаної послуги чи роботи встанови itemType = "work".
    - Знайди відповідний тип роботи в КАТАЛОЗІ РОЗЦІНОК.
-   - Якщо робота точно відповідає каталогу, підтягни ціну (pricePerUnit = base_price, priceFromCatalog = true).
-   - Якщо користувач вказав іншу ціну в диктовці (наприклад, "по 250 гривень"), використовуй ціну з диктовки і встанови priceFromCatalog = false.
+   - Каталог уже містить максимальну відому ціну для кожної роботи. Якщо користувач не назвав ціну, обов'язково підтягни base_price (priceFromCatalog = true, priceWasSpoken = false).
+   - Якщо користувач явно назвав ціну в диктовці (наприклад, "по 250 гривень"), використовуй саме її та встанови priceFromCatalog = false, priceWasSpoken = true.
    - Обчисли total = volume * pricePerUnit. Якщо volume або pricePerUnit невідомі, total = null.
 
 4. **Уточнення типів (Clarifications)**:
@@ -88,6 +89,7 @@ ${catalogPrompt}
       "projectHint": "назва_об'єкту_з_диктовки_якщо_не_знайдено_UUID_або_null",
       "items": [
         {
+          "itemType": "work", // "work" або "material"
           "action": "оригінальний текст роботи (напр. Шпаклівка стін)",
           "workType": "назва з каталогу або найкраще наближення",
           "volume": 25.5, // число або null, якщо не названо об'єм
@@ -95,6 +97,7 @@ ${catalogPrompt}
           "pricePerUnit": 180, // число або null
           "total": 4590, // volume * pricePerUnit або null
           "priceFromCatalog": true // true, якщо ціна з каталогу, false - якщо користувач назвав ціну або її немає
+          ,"priceWasSpoken": false // true лише коли користувач прямо назвав ціну
         }
       ]
     }

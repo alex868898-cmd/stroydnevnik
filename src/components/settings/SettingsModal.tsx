@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Modal, TouchableOpacity, ScrollView, Switch, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, Modal, TouchableOpacity, ScrollView, Switch, Alert, TextInput, ActivityIndicator, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, DEFAULT_NOTIFICATIONS } from '../../lib/constants';
 import { useAuthGate } from '../../contexts/AuthGateContext';
 import { hasPinSet, setPin, deletePin } from '../../services/pinAuth';
 import { isBiometricHardwareAvailable, isBiometricEnrolled, isBiometricEnabled, setBiometricEnabled } from '../../services/biometricAuth';
-import { saveDailyReminderSettings, saveWeeklyReminderSettings, syncReminderSchedules } from '../../services/notifications';
+import { saveReminderSettings } from '../../services/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../../lib/constants';
 import { supabase, clearCatalogCache } from '../../services/supabase';
+import { getContractorProfile, saveContractorProfile } from '../../services/contractorProfile';
+import { importPriceFile } from '../../services/priceKnowledge';
+import { toLocalISODate } from '../../lib/formatters';
+import Constants from 'expo-constants';
+import { hasMicrophonePermission, requestMicrophonePermission } from '../../services/microphonePermission';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -46,6 +51,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const [showMarketPrices, setShowMarketPrices] = useState(false);
   const [loadingMarketPrices, setLoadingMarketPrices] = useState(false);
   const [marketPricesList, setMarketPricesList] = useState<AggregatedPriceStat[]>([]);
+  const [contractorName, setContractorName] = useState('');
+  const [contractorPhone, setContractorPhone] = useState('');
+  const [savingContractor, setSavingContractor] = useState(false);
+  const [importingPrices, setImportingPrices] = useState(false);
+  const [microphoneGranted, setMicrophoneGranted] = useState(false);
+  const [requestingMicrophone, setRequestingMicrophone] = useState(false);
+
+  const appVersion = Constants.expoConfig?.version ?? '1.0.6';
+  const androidVersionCode = Constants.expoConfig?.android?.versionCode ?? 7;
 
   useEffect(() => {
     if (visible) {
@@ -89,6 +103,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
       if (storedWeeklyEnabled) setWeeklyEnabled(storedWeeklyEnabled !== 'false');
       if (storedWeeklyDay) setWeeklyDay(parseInt(storedWeeklyDay));
       if (storedWeeklyHour) setWeeklyHour(parseInt(storedWeeklyHour));
+
+      const contractor = await getContractorProfile();
+      setContractorName(contractor.name);
+      setContractorPhone(contractor.phone);
+      setMicrophoneGranted(await hasMicrophonePermission());
       
     } catch (e) {
       console.error('Failed to load settings', e);
@@ -100,7 +119,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
     try {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
+      const ninetyDaysAgoStr = toLocalISODate(ninetyDaysAgo);
 
       const { data, error } = await supabase
         .from('price_statistics')
@@ -147,6 +166,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
       Alert.alert('Помилка', 'Не вдалося завантажити ринкові ціни');
     } finally {
       setLoadingMarketPrices(false);
+    }
+  };
+
+  const handleImportPrices = async () => {
+    setImportingPrices(true);
+    try {
+      const result = await importPriceFile();
+      if (!result) return;
+      Alert.alert('Прайс завантажено', `${result.fileName}: додано ${result.count} позицій. Максимальні ціни вже доступні для автопідстановки.`);
+      if (showMarketPrices) await loadMarketPrices();
+    } catch (error: any) {
+      Alert.alert('Не вдалося завантажити прайс', error?.message || 'Перевірте формат таблиці');
+    } finally {
+      setImportingPrices(false);
     }
   };
 
@@ -225,9 +258,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
 
   const handleSaveReminders = async () => {
     try {
-      await saveDailyReminderSettings(dailyHour, dailyMinute);
-      await saveWeeklyReminderSettings(weeklyEnabled, weeklyDay, weeklyHour);
-      Alert.alert('Збережено', 'Налаштування нагадувань оновлено');
+      const enabled = await saveReminderSettings(dailyHour, dailyMinute, weeklyEnabled, weeklyDay, weeklyHour);
+      if (enabled) {
+        Alert.alert('Збережено', 'Налаштування нагадувань оновлено');
+      } else {
+        Alert.alert(
+          'Сповіщення вимкнені',
+          'Дозвольте KOSHTOR надсилати сповіщення у налаштуваннях телефону.',
+          [
+            { text: 'Пізніше', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
     } catch (e) {
       Alert.alert('Помилка', 'Не вдалося оновити нагадування');
     }
@@ -236,6 +279,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   const handleClearCache = async () => {
     clearCatalogCache();
     Alert.alert('Успішно', 'Кеш каталогу розцінок очищено. Його буде оновлено при наступному запиті.');
+  };
+
+  const handleMicrophonePermission = async () => {
+    setRequestingMicrophone(true);
+    try {
+      const permission = await requestMicrophonePermission();
+      const granted = permission === 'granted';
+      setMicrophoneGranted(granted);
+
+      if (granted) {
+        Alert.alert('Мікрофон підключено', 'Голосове введення готове до роботи.');
+        return;
+      }
+
+      Alert.alert(
+        'Доступ до мікрофона не надано',
+        permission === 'blocked'
+          ? 'Android заблокував повторний запит. Відкрийте налаштування KOSHTOR та дозвольте використання мікрофона.'
+          : 'Натисніть кнопку ще раз, щоб повторити системний запит Android.',
+        [
+          { text: 'Закрити', style: 'cancel' },
+          { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+        ],
+      );
+    } finally {
+      setRequestingMicrophone(false);
+    }
+  };
+
+  const handleSaveContractor = async () => {
+    if (!contractorName.trim()) {
+      Alert.alert('Помилка', 'Вкажіть назву організації або ім’я підрядника');
+      return;
+    }
+    setSavingContractor(true);
+    try {
+      await saveContractorProfile({ name: contractorName, phone: contractorPhone });
+      Alert.alert('Збережено', 'Дані підрядника будуть додані до PDF-звітів');
+    } finally {
+      setSavingContractor(false);
+    }
   };
 
   const handleLogout = () => {
@@ -284,6 +368,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
           </View>
 
           <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+            <Text style={styles.sectionTitle}>Власний прайс</Text>
+            <View style={styles.card}>
+              <Text style={styles.settingDesc}>Excel або CSV: колонки «Найменування роботи», «Одиниця» та «Ціна». Дані поповнять загальну базу цін.</Text>
+              <TouchableOpacity style={styles.saveRemindersBtn} onPress={handleImportPrices} disabled={importingPrices}>
+                {importingPrices ? <ActivityIndicator color="#fff" /> : (
+                  <View style={styles.row}><Ionicons name="cloud-upload-outline" size={20} color="#fff" /><Text style={[styles.saveRemindersBtnText, { marginLeft: 8 }]}>Завантажити прайс</Text></View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sectionTitle}>Дані підрядника для PDF</Text>
+            <View style={styles.card}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Організація або ім’я</Text>
+                <TextInput style={styles.textInput} value={contractorName} onChangeText={setContractorName} placeholder="Напр. Stroykeeper або Сергій" placeholderTextColor={COLORS.textMuted} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Контактний телефон</Text>
+                <TextInput style={styles.textInput} value={contractorPhone} onChangeText={setContractorPhone} keyboardType="phone-pad" placeholder="+380…" placeholderTextColor={COLORS.textMuted} />
+              </View>
+              <TouchableOpacity style={styles.saveRemindersBtn} onPress={handleSaveContractor} disabled={savingContractor}>
+                {savingContractor ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveRemindersBtnText}>Зберегти дані підрядника</Text>}
+              </TouchableOpacity>
+            </View>
+
             {/* SECURITY SECTION */}
             <Text style={styles.sectionTitle}>Безпека та локальний захист</Text>
             <View style={styles.card}>
@@ -480,6 +589,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
             {/* SYSTEM CACHE */}
             <Text style={styles.sectionTitle}>Системні налаштування</Text>
             <View style={styles.card}>
+              <TouchableOpacity style={styles.actionRow} onPress={handleMicrophonePermission} disabled={requestingMicrophone}>
+                <Ionicons
+                  name={microphoneGranted ? 'mic-circle' : 'mic-circle-outline'}
+                  size={24}
+                  color={microphoneGranted ? COLORS.accent : COLORS.primary}
+                  style={styles.actionIcon}
+                />
+                <View style={styles.settingTextGroup}>
+                  <Text style={styles.settingLabel}>Доступ до мікрофона</Text>
+                  <Text style={styles.settingDesc}>
+                    {microphoneGranted ? 'Дозвіл надано' : 'Натисніть, щоб відкрити системний запит Android'}
+                  </Text>
+                </View>
+                {requestingMicrophone && <ActivityIndicator color={COLORS.primary} />}
+              </TouchableOpacity>
+
               <TouchableOpacity style={styles.actionRow} onPress={handleClearCache}>
                 <Ionicons name="refresh-circle-outline" size={24} color={COLORS.primary} style={styles.actionIcon} />
                 <View style={styles.settingTextGroup}>
@@ -494,6 +619,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
               <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.logoutText}>Вийти з облікового запису</Text>
             </TouchableOpacity>
+            <Text style={styles.versionText}>KOSHTOR {appVersion} · Android {androidVersionCode}</Text>
           </ScrollView>
         </View>
       </Modal>
@@ -798,6 +924,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  versionText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 14,
   },
 
   // Market prices list styles

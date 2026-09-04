@@ -1,21 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated, Platform, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, Alert, TextInput, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAudioRecorder, RecordingPresets, useAudioRecorderState } from 'expo-audio';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  useAudioRecorderState,
+} from 'expo-audio';
 import { COLORS } from '../../lib/constants';
+import { requestMicrophonePermission } from '../../services/microphonePermission';
 
 interface VoiceRecorderProps {
   onRecordingFinished: (uri: string) => void;
+  onSendText: (text: string) => void;
+  onAddReceipt: () => void;
   isProcessing: boolean;
   processingStatus: string;
 }
 
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onRecordingFinished,
+  onSendText,
+  onAddReceipt,
   isProcessing,
   processingStatus,
 }) => {
   const [duration, setDuration] = useState(0);
+  const [text, setText] = useState('');
   const timerRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -73,12 +83,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
   const startRecording = async () => {
     try {
+      const permission = await requestMicrophonePermission();
+
+      if (permission !== 'granted') {
+        Alert.alert(
+          'Потрібен доступ до мікрофона',
+          permission === 'blocked'
+            ? 'Android заблокував повторний системний запит. Відкрийте налаштування KOSHTOR і увімкніть дозвіл «Мікрофон».'
+            : 'Без дозволу мікрофона голосове введення не працюватиме. Натисніть мікрофон ще раз, щоб повторити системний запит.',
+          [
+            { text: 'Скасувати', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+
       // Rule: prepareToRecordAsync перед каждым record
       await audioRecorder.prepareToRecordAsync();
       await audioRecorder.record();
     } catch (error) {
       console.error('Failed to start recording:', error);
-      Alert.alert('Помилка', 'Не вдалося почати запис аудіо. Перевірте дозволи мікрофона.');
+      const details = error instanceof Error ? error.message : String(error);
+      Alert.alert(
+        'Не вдалося почати запис',
+        `Перевірте дозвіл мікрофона для KOSHTOR.\n\n${details}`,
+        [
+          { text: 'Закрити', style: 'cancel' },
+          { text: 'Відкрити налаштування', onPress: () => Linking.openSettings() },
+        ],
+      );
     }
   };
 
@@ -107,6 +141,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     return `${m}:${s}`;
   };
 
+  const handleSendText = () => {
+    const value = text.trim();
+    if (!value || isProcessing || isRecording) return;
+    onSendText(value);
+    setText('');
+  };
+
   return (
     <View style={styles.container}>
       {isRecording && (
@@ -117,42 +158,59 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         <Text style={styles.statusText}>{processingStatus}</Text>
       )}
 
-      <View style={styles.buttonWrapper}>
-        {isRecording && (
-          <Animated.View 
-            style={[
-              styles.pulseCircle, 
-              { transform: [{ scale: pulseAnim }] }
-            ]} 
-          />
-        )}
-        <TouchableOpacity
-          style={[
-            styles.micButton,
-            isRecording && styles.micButtonActive,
-            isProcessing && styles.micButtonDisabled
-          ]}
-          onPress={handlePress}
-          disabled={isProcessing}
-          activeOpacity={0.8}
-        >
-          {isProcessing ? (
-            <Ionicons name="ellipsis-horizontal" size={32} color={COLORS.textSecondary} />
-          ) : isRecording ? (
-            <Ionicons name="stop" size={32} color="#fff" />
-          ) : (
-            <Ionicons name="mic" size={36} color="#fff" />
+      <View style={styles.composer}>
+        <TouchableOpacity style={styles.addButton} onPress={onAddReceipt} disabled={isProcessing || isRecording} accessibilityLabel="Додати чек">
+          <Ionicons name="add" size={25} color={COLORS.text} />
+        </TouchableOpacity>
+        <TextInput
+          style={styles.textInput}
+          value={text}
+          onChangeText={setText}
+          placeholder="Опишіть виконані роботи…"
+          placeholderTextColor={COLORS.textMuted}
+          editable={!isProcessing && !isRecording}
+          returnKeyType="send"
+          onSubmitEditing={handleSendText}
+          multiline
+          maxLength={2000}
+        />
+        <View style={styles.buttonWrapper}>
+          {isRecording && (
+            <Animated.View
+              style={[
+                styles.pulseCircle,
+                { transform: [{ scale: pulseAnim }] }
+              ]}
+            />
           )}
+          <TouchableOpacity
+            style={[
+              styles.micButton,
+              isRecording && styles.micButtonActive,
+              isProcessing && styles.micButtonDisabled
+            ]}
+            onPress={handlePress}
+            disabled={isProcessing}
+            activeOpacity={0.8}
+          >
+            {isProcessing ? (
+              <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.textSecondary} />
+            ) : isRecording ? (
+              <Ionicons name="stop" size={22} color="#fff" />
+            ) : (
+              <Ionicons name="mic" size={24} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          style={[styles.sendButton, (!text.trim() || isProcessing || isRecording) && styles.sendButtonDisabled]}
+          onPress={handleSendText}
+          disabled={!text.trim() || isProcessing || isRecording}
+          accessibilityLabel="Надіслати текст"
+        >
+          <Ionicons name="arrow-up" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
-
-      <Text style={styles.hintText}>
-        {isProcessing
-          ? 'Обробка аудіо...'
-          : isRecording
-          ? 'Натисніть для збереження'
-          : 'Натисніть та диктуйте виконані роботи'}
-      </Text>
     </View>
   );
 };
@@ -161,7 +219,8 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     width: '100%',
   },
   timerText: {
@@ -179,23 +238,22 @@ const styles = StyleSheet.create({
   },
   buttonWrapper: {
     position: 'relative',
-    width: 100,
-    height: 100,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 15,
   },
   pulseCircle: {
     position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(59, 130, 246, 0.25)',
   },
   micButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -216,9 +274,45 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
-  hintText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
+  composer: {
+    width: '100%',
+    minHeight: 52,
+    maxHeight: 120,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    padding: 5,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.background,
+  },
+  textInput: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 100,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    color: COLORS.text,
+    fontSize: 15,
+  },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  sendButtonDisabled: {
+    opacity: 0.35,
   },
 });

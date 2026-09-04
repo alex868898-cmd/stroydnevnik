@@ -4,14 +4,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { useProjects } from '../../hooks/useProjects';
 import { supabase } from '../../services/supabase';
 import { getDateRange, PeriodType, DateRange } from '../../lib/dateRange';
-import { formatCurrency, formatDate } from '../../lib/formatters';
+import { formatCurrency, formatDate, toLocalISODate } from '../../lib/formatters';
 import { COLORS } from '../../lib/constants';
 import { ReportItemTable } from '../../components/pdf/ReportItemTable';
 import { generateReportPDF } from '../../services/pdf';
-import { generateReportCSV } from '../../services/excel';
+import { generateReportExcel } from '../../services/excel';
 import { shareReportFile } from '../../services/shareReport';
 import { Project, WorkLog, WorkItem, EstimateHistory } from '../../lib/types';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
+import { TopTabBar } from '../../components/navigation/TopTabBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DateWheelPicker } from '../../components/date/DateWheelPicker';
+import { getContractorProfile } from '../../services/contractorProfile';
+import { getReceiptImages } from '../../services/receipts';
+import { getPriceRange } from '../../services/priceKnowledge';
+
+const toLocalDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const fromLocalDateString = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return year && month && day ? new Date(year, month - 1, day, 12) : new Date();
+};
 
 interface EstimateDisplayItem {
   logId: string;
@@ -20,6 +38,7 @@ interface EstimateDisplayItem {
 }
 
 export default function ReportsScreen() {
+  const insets = useSafeAreaInsets();
   const { projects, loading: loadingProjects } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   
@@ -28,6 +47,9 @@ export default function ReportsScreen() {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [pickerStart, setPickerStart] = useState(new Date());
+  const [pickerEnd, setPickerEnd] = useState(new Date());
+  const [activeDatePicker, setActiveDatePicker] = useState<'start' | 'end'>('start');
 
   // Data States
   const [loadingData, setLoadingData] = useState(false);
@@ -40,6 +62,7 @@ export default function ReportsScreen() {
   const [action, setAction] = useState('');
   const [volume, setVolume] = useState('');
   const [unit, setUnit] = useState('м²');
+  const [manualItemType, setManualItemType] = useState<'work' | 'material'>('work');
   const [price, setPrice] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -188,32 +211,7 @@ export default function ReportsScreen() {
     }
     
     try {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
-
-      const { data, error } = await supabase
-        .from('price_statistics')
-        .select('price')
-        .ilike('work_type', workType.trim())
-        .gt('recorded_at', ninetyDaysAgoStr);
-
-      if (error) throw error;
-
-      if (data && data.length >= 3) {
-        const prices = data.map(d => Number(d.price));
-        const priceMin = Math.min(...prices);
-        const priceMax = Math.max(...prices);
-        const priceAvg = Math.round(prices.reduce((sum, val) => sum + val, 0) / prices.length);
-        setMarketStats({
-          min: priceMin,
-          max: priceMax,
-          avg: priceAvg,
-          samples: prices.length
-        });
-      } else {
-        setMarketStats(null);
-      }
+      setMarketStats(await getPriceRange(workType));
     } catch (err) {
       console.warn('Failed to load market statistics inside reports:', err);
       setMarketStats(null);
@@ -241,6 +239,7 @@ export default function ReportsScreen() {
     setAdding(true);
     try {
       const newWorkItem: WorkItem = {
+        itemType: manualItemType,
         action: action.trim(),
         workType: action.trim(),
         volume: volNum,
@@ -266,6 +265,7 @@ export default function ReportsScreen() {
       }]);
 
       setAction('');
+      setManualItemType('work');
       setVolume('');
       setPrice('');
       setMarketStats(null);
@@ -296,23 +296,27 @@ export default function ReportsScreen() {
       let mimeType = '';
 
       if (type === 'pdf') {
+        const contractor = await getContractorProfile();
+        const receiptImages = await getReceiptImages(selectedProjectId, dateRange.startDate, dateRange.endDate);
         fileUri = await generateReportPDF({
           project,
           periodStart: dateRange.startDate,
           periodEnd: dateRange.endDate,
           items,
-          totalAmount
+          totalAmount,
+          contractor,
+          receiptImages,
         });
         mimeType = 'application/pdf';
       } else {
-        fileUri = await generateReportCSV({
+        fileUri = await generateReportExcel({
           project,
           periodStart: dateRange.startDate,
           periodEnd: dateRange.endDate,
           items,
           totalAmount
         });
-        mimeType = 'text/csv';
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       }
 
       // Save this export in estimate_history for audit trail / tracking
@@ -333,7 +337,7 @@ export default function ReportsScreen() {
         work_type: item.action,
         price: item.pricePerUnit || 0,
         region: 'ukraine',
-        recorded_at: new Date().toISOString().split('T')[0]
+        recorded_at: toLocalISODate()
       }));
       
       if (statsPayload.length > 0) {
@@ -350,23 +354,33 @@ export default function ReportsScreen() {
       
       // Reload UI to refresh any state, but items will NOT disappear
       loadReportData();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      Alert.alert('Помилка експорту', 'Не вдалося згенерувати або надіслати файл');
+      Alert.alert(
+        'Помилка експорту',
+        e?.message || 'Не вдалося згенерувати або надіслати файл'
+      );
     } finally {
       setLoadingData(false);
     }
   };
 
+  const openCustomDatePicker = () => {
+    setPickerStart(fromLocalDateString(customStart || dateRange.startDate));
+    setPickerEnd(fromLocalDateString(customEnd || dateRange.endDate));
+    setActiveDatePicker('start');
+    setShowCustomModal(true);
+  };
+
   const handleApplyCustomDates = () => {
-    if (customStart && customEnd) {
-      if (customStart > customEnd) {
-        Alert.alert('Помилка', 'Початкова дата не може быть більшою за кінцеву');
-        return;
-      }
-      setPeriodType('custom');
-      setShowCustomModal(false);
+    if (pickerStart > pickerEnd) {
+      Alert.alert('Помилка', 'Початкова дата не може бути більшою за кінцеву');
+      return;
     }
+    setCustomStart(toLocalDateString(pickerStart));
+    setCustomEnd(toLocalDateString(pickerEnd));
+    setPeriodType('custom');
+    setShowCustomModal(false);
   };
 
   const totalAmount = useMemo(() => {
@@ -382,6 +396,8 @@ export default function ReportsScreen() {
           <Text style={styles.headerTitle}>Кошториси робіт</Text>
         </View>
       </View>
+
+      <TopTabBar />
 
       {/* Period Filter Buttons */}
       <View style={styles.filterSection}>
@@ -405,7 +421,7 @@ export default function ReportsScreen() {
 
         <TouchableOpacity
           style={[styles.filterBtn, periodType === 'custom' && styles.filterBtnActive]}
-          onPress={() => setShowCustomModal(true)}
+          onPress={openCustomDatePicker}
         >
           <Text style={[styles.filterBtnText, periodType === 'custom' && styles.filterBtnTextActive]}>
             Період...
@@ -481,7 +497,7 @@ export default function ReportsScreen() {
       </View>
 
       {/* Export / Sharing Action Bar at Bottom */}
-      <View style={styles.exportBar}>
+      <View style={[styles.exportBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Всього до виплати:</Text>
           <Text style={styles.totalValue}>{formatCurrency(totalAmount)}</Text>
@@ -518,6 +534,17 @@ export default function ReportsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Додати позицію вручну</Text>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Тип позиції</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(['work', 'material'] as const).map(type => (
+                  <TouchableOpacity key={type} onPress={() => setManualItemType(type)} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: manualItemType === type ? COLORS.primary : COLORS.cardBorder, backgroundColor: manualItemType === type ? COLORS.primary : COLORS.background }}>
+                    <Text style={{ color: manualItemType === type ? '#fff' : COLORS.textSecondary, fontWeight: '700' }}>{type === 'work' ? 'Робота' : 'Матеріал'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Найменування роботи</Text>
@@ -566,9 +593,9 @@ export default function ReportsScreen() {
                 placeholderTextColor={COLORS.textMuted}
                 onFocus={() => fetchMarketStats(action)}
               />
-              {marketStats && marketStats.samples >= 3 && (
+              {marketStats && (
                 <Text style={styles.marketHint}>
-                  Ринок: від {marketStats.min} до {marketStats.max} грн (середня {marketStats.avg} грн)
+                  За внутрішньою базою: {marketStats.min}–{marketStats.max} грн. Рекомендуємо {marketStats.max} грн або середню {marketStats.avg} грн.
                 </Text>
               )}
             </View>
@@ -615,27 +642,28 @@ export default function ReportsScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Оберіть довільний період</Text>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Початкова дата (РРРР-ММ-ДД)</Text>
-              <TextInput
-                style={styles.input}
-                value={customStart}
-                onChangeText={setCustomStart}
-                placeholder="2026-06-01"
-                placeholderTextColor={COLORS.textMuted}
-              />
+            <View style={styles.dateTabs}>
+              <TouchableOpacity
+                style={[styles.dateTab, activeDatePicker === 'start' && styles.dateTabActive]}
+                onPress={() => setActiveDatePicker('start')}
+              >
+                <Text style={styles.dateTabLabel}>Початок</Text>
+                <Text style={styles.dateTabValue}>{formatDate(pickerStart)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dateTab, activeDatePicker === 'end' && styles.dateTabActive]}
+                onPress={() => setActiveDatePicker('end')}
+              >
+                <Text style={styles.dateTabLabel}>Кінець</Text>
+                <Text style={styles.dateTabValue}>{formatDate(pickerEnd)}</Text>
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Кінцева дата (РРРР-ММ-ДД)</Text>
-              <TextInput
-                style={styles.input}
-                value={customEnd}
-                onChangeText={setCustomEnd}
-                placeholder="2026-06-30"
-                placeholderTextColor={COLORS.textMuted}
-              />
-            </View>
+            <Text style={styles.datePickerHint}>Прокручуйте день, місяць і рік або натискайте стрілки</Text>
+            <DateWheelPicker
+              value={activeDatePicker === 'start' ? pickerStart : pickerEnd}
+              onChange={activeDatePicker === 'start' ? setPickerStart : setPickerEnd}
+            />
 
             <View style={styles.modalActions}>
               <TouchableOpacity 
@@ -665,7 +693,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    paddingTop: 60,
+    height: 116,
+    paddingTop: 52,
     paddingHorizontal: 20,
     paddingBottom: 15,
   },
@@ -708,6 +737,40 @@ const styles = StyleSheet.create({
   },
   filterBtnTextActive: {
     color: '#fff',
+  },
+  dateTabs: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  dateTab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    borderRadius: 10,
+    backgroundColor: COLORS.background,
+  },
+  dateTabActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '18',
+  },
+  dateTabLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  dateTabValue: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  datePickerHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 2,
   },
   rangeInfo: {
     flexDirection: 'row',

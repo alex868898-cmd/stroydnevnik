@@ -1,68 +1,103 @@
-import React, { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet, StatusBar, Platform } from 'react-native';
-import { Stack, Slot, useRouter, useSegments } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
-import { requestRecordingPermissionsAsync } from 'expo-audio';
+import React, { useEffect, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking as NativeLinking, Platform } from 'react-native';
+import { Slot, useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { AuthGateProvider, useAuthGate } from '../contexts/AuthGateContext';
 import { PinEntry } from '../components/auth/PinEntry';
 import { COLORS } from '../lib/constants';
 import { syncReminderSchedules } from '../services/notifications';
 import { supabase } from '../services/supabase';
-
-// Determine if we are running inside Expo Go
-const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-
-// Safely require expo-notifications only if not in Expo Go to prevent crashes in dev client
-let Notifications: any = null;
-if (!isExpoGo && Platform.OS !== 'web') {
-  try {
-    Notifications = require('expo-notifications');
-  } catch (e) {
-    console.warn('Failed to load expo-notifications in layout:', e);
-  }
-}
+import { requestMicrophonePermission } from '../services/microphonePermission';
+import ResetPasswordScreen from './(auth)/reset-password';
 
 function RootLayoutContent() {
-  const { session, loading, isLocalLocked, unlockLocal, signOut } = useAuthGate();
+  const {
+    session,
+    loading,
+    isLocalLocked,
+    isPasswordRecovery,
+    beginPasswordRecovery,
+    unlockLocal,
+    signOut,
+  } = useAuthGate();
   const segments = useSegments();
   const router = useRouter();
   const url = Linking.useURL();
+  const microphonePromptStarted = useRef(false);
+
+  // Ask for microphone access as soon as the application has finished loading.
+  // If Android no longer allows the system prompt, direct the user to App settings.
+  useEffect(() => {
+    if (loading || Platform.OS === 'web' || microphonePromptStarted.current) return;
+
+    const timer = setTimeout(async () => {
+      if (microphonePromptStarted.current) return;
+      microphonePromptStarted.current = true;
+
+      try {
+        const permission = await requestMicrophonePermission();
+        if (permission === 'granted') return;
+
+        Alert.alert(
+          'Потрібен доступ до мікрофона',
+          permission === 'blocked'
+            ? 'Android більше не показує системний запит для KOSHTOR. Відкрийте налаштування застосунку та увімкніть «Мікрофон».'
+            : 'Ви не надали доступ до мікрофона. Натисніть кнопку мікрофона в журналі, щоб повторити системний запит.',
+          [
+            { text: 'Пізніше', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => NativeLinking.openSettings() },
+          ],
+        );
+      } catch (error) {
+        console.error('Unable to request microphone permission on startup:', error);
+        Alert.alert(
+          'Не вдалося запросити доступ',
+          'Відкрийте налаштування KOSHTOR і дозвольте використання мікрофона.',
+          [
+            { text: 'Закрити', style: 'cancel' },
+            { text: 'Відкрити налаштування', onPress: () => NativeLinking.openSettings() },
+          ],
+        );
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Deep Link Handling for email confirmation / oauth redirects
   useEffect(() => {
     const handleDeepLink = async (openedUrl: string) => {
       try {
         console.log('Opened app via deep link:', openedUrl);
-        
-        // 1. Try legacy getSessionFromUrl if it exists on the auth client
-        if (typeof (supabase.auth as any).getSessionFromUrl === 'function') {
-          const { error } = await (supabase.auth as any).getSessionFromUrl({ storeSession: true });
-          if (!error) {
-            console.log('Successfully handled deep link session using getSessionFromUrl');
-            return;
-          }
-        }
 
-        // 2. Fallback: Parse URL manually and call setSession
+        // Supabase may return auth values in the query string (PKCE) or hash
+        // fragment (implicit flow), depending on platform and configuration.
         const params: Record<string, string> = {};
         const hashIdx = openedUrl.indexOf('#');
         const queryIdx = openedUrl.indexOf('?');
-        const startIdx = hashIdx !== -1 ? hashIdx : queryIdx;
-        
-        if (startIdx !== -1) {
-          const paramString = openedUrl.substring(startIdx + 1);
+
+        const readParams = (paramString: string) => {
           const pairs = paramString.split('&');
           for (const pair of pairs) {
             const [key, value] = pair.split('=');
             if (key && value) {
-              params[decodeURIComponent(key)] = decodeURIComponent(value);
+              params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' '));
             }
           }
+        };
+
+        if (queryIdx !== -1) {
+          readParams(openedUrl.slice(queryIdx + 1, hashIdx === -1 ? undefined : hashIdx));
+        }
+        if (hashIdx !== -1) {
+          readParams(openedUrl.slice(hashIdx + 1));
         }
 
-        const { access_token, refresh_token } = params;
+        const { access_token, refresh_token, type, code } = params;
+
+        if (type === 'recovery') {
+          beginPasswordRecovery();
+        }
 
         if (access_token && refresh_token) {
           console.log('Found session tokens in deep link, updating session manually...');
@@ -76,6 +111,13 @@ function RootLayoutContent() {
           } else {
             console.log('Session successfully set from deep link. Logged in as:', data.user?.email);
           }
+        } else if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.error('Error exchanging auth code from deep link:', error);
+          } else {
+            console.log('Session successfully exchanged from deep link. Logged in as:', data.user?.email);
+          }
         }
       } catch (err) {
         console.error('Error in deep link processing:', err);
@@ -85,13 +127,20 @@ function RootLayoutContent() {
     if (url) {
       handleDeepLink(url);
     }
-  }, [url]);
+  }, [url, beginPasswordRecovery]);
 
   // Redirect logic based on Supabase session state
   useEffect(() => {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+
+    // The recovery form is rendered directly by the root layout. Keeping it
+    // outside regular route redirects prevents auth guards or browser history
+    // from replacing it with the main application.
+    if (isPasswordRecovery) {
+      return;
+    }
 
     if (!session) {
       // No active session -> go to login
@@ -104,49 +153,23 @@ function RootLayoutContent() {
         router.replace('/(tabs)');
       }
     }
-  }, [session, loading, isLocalLocked, segments]);
-
-  // Request startup permissions on first run after authorization
-  useEffect(() => {
-    const requestStartupPermissions = async () => {
-      if (session && !isLocalLocked) {
-        try {
-          const hasRequested = await AsyncStorage.getItem('has_requested_startup_permissions');
-          if (!hasRequested) {
-            // 1. Microphone permission (safe to call directly from expo-audio)
-            try {
-              await requestRecordingPermissionsAsync();
-            } catch (err) {
-              console.error('Error requesting recording permission:', err);
-            }
-
-            // 2. Notification permission (safely loaded/guarded)
-            try {
-              if (Notifications) {
-                await Notifications.requestPermissionsAsync();
-              }
-            } catch (err) {
-              console.error('Error requesting notification permission:', err);
-            }
-
-            // Mark as requested
-            await AsyncStorage.setItem('has_requested_startup_permissions', 'true');
-          }
-        } catch (err) {
-          console.error('Error in startup permissions request:', err);
-        }
-      }
-    };
-
-    requestStartupPermissions();
-  }, [session, isLocalLocked]);
+  }, [session, loading, isLocalLocked, isPasswordRecovery, segments, router]);
 
   // Sync scheduled push reminders on login
   useEffect(() => {
-    if (session && !isLocalLocked) {
+    if (session && !isLocalLocked && !isPasswordRecovery) {
       syncReminderSchedules().catch(e => console.error('Error syncing notifications:', e));
     }
-  }, [session, isLocalLocked]);
+  }, [session, isLocalLocked, isPasswordRecovery]);
+
+  if (isPasswordRecovery) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+        <ResetPasswordScreen />
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -157,7 +180,7 @@ function RootLayoutContent() {
   }
 
   // Local Security Gate: PIN/Biometric lock screen overlay
-  if (session && isLocalLocked) {
+  if (session && isLocalLocked && !isPasswordRecovery) {
     return (
       <View style={styles.lockContainer}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />

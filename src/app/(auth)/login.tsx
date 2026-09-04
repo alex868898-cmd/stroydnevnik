@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../services/supabase';
 import { COLORS } from '../../lib/constants';
@@ -26,8 +26,22 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      const browserOrigin =
+        typeof globalThis !== 'undefined' && 'location' in globalThis
+          ? globalThis.location.origin
+          : null;
+
+      // For web recovery, Supabase must return to the browser origin that sent
+      // the request; native builds keep using the installed-app deep link.
+      const redirectTo =
+        Platform.OS === 'web' && browserOrigin
+          ? `${browserOrigin}/`
+          : 'stroydnevnik://';
+
+      console.info(`[auth] Password recovery redirect: ${redirectTo}`);
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'stroydnevnik://',
+        redirectTo,
       });
 
       if (error) {
@@ -126,7 +140,7 @@ export default function LoginScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.formContainer}>
-          <Text style={styles.logo}>СтройДневник 🏗️</Text>
+          <Text style={styles.logo}>KOSHTOR</Text>
           <Text style={styles.title}>Відновлення паролю</Text>
           <Text style={styles.subtitle}>
             Введіть адресу електронної пошти, щоб отримати посилання для відновлення паролю.
@@ -215,7 +229,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.formContainer}>
-        <Text style={styles.logo}>СтройДневник 🏗️</Text>
+        <Text style={styles.logo}>KOSHTOR</Text>
         <Text style={styles.title}>Вхід в систему</Text>
 
         <View style={styles.inputGroup}>

@@ -34,7 +34,7 @@ export async function setBiometricEnabled(enabled: boolean): Promise<void> {
 /**
  * Triggers native biometric authentication prompt
  */
-export async function authenticateBiometrics(promptMessage = 'Вхід до СтройДневник'): Promise<boolean> {
+export async function authenticateBiometrics(promptMessage = 'Вхід до KOSHTOR'): Promise<boolean> {
   const isEnrolled = await isBiometricEnrolled();
   if (!isEnrolled) return false;
 

@@ -4,6 +4,7 @@ import * as db from '../services/supabase';
 
 // Module-level in-memory cache to persist between tab switches
 let cachedProjects: Project[] | null = null;
+let cachedUserId: string | null = null;
 let listeners: Array<(projects: Project[]) => void> = [];
 
 const updateCache = (newProjects: Project[]) => {
@@ -28,6 +29,17 @@ export function useProjects() {
   }, []);
 
   const fetchProjects = useCallback(async (force = false) => {
+    const { data: { user } } = await db.supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    if (cachedUserId !== user.id) {
+      cachedProjects = null;
+      cachedUserId = user.id;
+    }
+
     if (cachedProjects && !force) {
       setProjects(cachedProjects);
       setLoading(false);
@@ -48,6 +60,18 @@ export function useProjects() {
 
   useEffect(() => {
     fetchProjects();
+    const { data: { subscription } } = db.supabase.auth.onAuthStateChange(event => {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        setTimeout(() => fetchProjects(true), 0);
+      }
+      if (event === 'SIGNED_OUT') {
+        cachedProjects = null;
+        cachedUserId = null;
+        setProjects([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [fetchProjects]);
 
   const addProject = useCallback(async (name: string, address?: string) => {
@@ -105,4 +129,5 @@ export function useProjects() {
 
 export function clearProjectsCache() {
   cachedProjects = null;
+  cachedUserId = null;
 }

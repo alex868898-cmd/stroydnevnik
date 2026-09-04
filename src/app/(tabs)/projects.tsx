@@ -6,10 +6,12 @@ import { ProjectCard } from '../../components/projects/ProjectCard';
 import { COLORS } from '../../lib/constants';
 import { supabase } from '../../services/supabase';
 import { ProjectStatus, getStatusInfo } from '../../lib/projectStatus';
-import { formatDate, formatCurrency } from '../../lib/formatters';
+import { formatDate, formatCurrency, toLocalISODate } from '../../lib/formatters';
 import { WorkLog, WorkItem, Project } from '../../lib/types';
 import { ReportItemTable } from '../../components/pdf/ReportItemTable';
 import { calculateItemsTotal } from '../../lib/workLogUtils';
+import { TopTabBar } from '../../components/navigation/TopTabBar';
+import { getPriceRange } from '../../services/priceKnowledge';
 
 interface DrillDownItem {
   logId: string;
@@ -37,10 +39,11 @@ export default function ProjectsScreen() {
   const [showAddWorkModal, setShowAddWorkModal] = useState(false);
 
   // Form states for history work items
-  const [workDate, setWorkDate] = useState(new Date().toISOString().split('T')[0]);
+  const [workDate, setWorkDate] = useState(toLocalISODate());
   const [workAction, setWorkAction] = useState('');
   const [workVolume, setWorkVolume] = useState('');
   const [workUnit, setWorkUnit] = useState('м²');
+  const [workItemType, setWorkItemType] = useState<'work' | 'material'>('work');
   const [workPrice, setWorkPrice] = useState('');
   const [savingWork, setSavingWork] = useState(false);
 
@@ -192,32 +195,7 @@ export default function ProjectsScreen() {
     }
     
     try {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
-
-      const { data, error } = await supabase
-        .from('price_statistics')
-        .select('price')
-        .ilike('work_type', workType.trim())
-        .gt('recorded_at', ninetyDaysAgoStr);
-
-      if (error) throw error;
-
-      if (data && data.length >= 3) {
-        const prices = data.map(d => Number(d.price));
-        const priceMin = Math.min(...prices);
-        const priceMax = Math.max(...prices);
-        const priceAvg = Math.round(prices.reduce((sum, val) => sum + val, 0) / prices.length);
-        setMarketStats({
-          min: priceMin,
-          max: priceMax,
-          avg: priceAvg,
-          samples: prices.length
-        });
-      } else {
-        setMarketStats(null);
-      }
+      setMarketStats(await getPriceRange(workType));
     } catch (err) {
       console.warn('Failed to load market statistics inside projects:', err);
       setMarketStats(null);
@@ -243,6 +221,7 @@ export default function ProjectsScreen() {
     setSavingWork(true);
     try {
       const newItem: WorkItem = {
+        itemType: workItemType,
         action: workAction.trim(),
         workType: workAction.trim(),
         volume: volNum,
@@ -294,6 +273,7 @@ export default function ProjectsScreen() {
 
       // Reset Form and Reload
       setWorkAction('');
+      setWorkItemType('work');
       setWorkVolume('');
       setWorkPrice('');
       setMarketStats(null);
@@ -390,7 +370,7 @@ export default function ProjectsScreen() {
           <TouchableOpacity 
             style={styles.addWorkBtn} 
             onPress={() => {
-              setWorkDate(new Date().toISOString().split('T')[0]);
+              setWorkDate(toLocalISODate());
               setShowAddWorkModal(true);
             }}
           >
@@ -473,6 +453,17 @@ export default function ProjectsScreen() {
               <Text style={styles.modalTitle}>Додати роботу в історію</Text>
 
               <View style={styles.formGroup}>
+                <Text style={styles.label}>Тип позиції</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(['work', 'material'] as const).map(type => (
+                    <TouchableOpacity key={type} onPress={() => setWorkItemType(type)} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: workItemType === type ? COLORS.primary : COLORS.cardBorder, backgroundColor: workItemType === type ? COLORS.primary : COLORS.background }}>
+                      <Text style={{ color: workItemType === type ? '#fff' : COLORS.textSecondary, fontWeight: '700' }}>{type === 'work' ? 'Робота' : 'Матеріал'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.formGroup}>
                 <Text style={styles.label}>Дата (РРРР-ММ-ДД)</Text>
                 <TextInput
                   style={styles.input}
@@ -529,9 +520,9 @@ export default function ProjectsScreen() {
                   placeholderTextColor={COLORS.textMuted}
                   onFocus={() => fetchMarketStats(workAction)}
                 />
-                {marketStats && marketStats.samples >= 3 && (
+                {marketStats && (
                   <Text style={styles.marketHint}>
-                    Ринок: від {marketStats.min} до {marketStats.max} грн (середня {marketStats.avg} грн)
+                    За внутрішньою базою: {marketStats.min}–{marketStats.max} грн. Рекомендуємо {marketStats.max} грн або середню {marketStats.avg} грн.
                   </Text>
                 )}
               </View>
@@ -578,6 +569,8 @@ export default function ProjectsScreen() {
           <Ionicons name="add-circle" size={32} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
+
+      <TopTabBar />
 
       {/* Projects List */}
       <ScrollView 
@@ -678,10 +671,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
+    height: 116,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 52,
     paddingHorizontal: 20,
     paddingBottom: 15,
     borderBottomWidth: 1,
