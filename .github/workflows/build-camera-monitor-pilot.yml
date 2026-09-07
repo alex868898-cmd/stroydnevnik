@@ -1,0 +1,53 @@
+name: Build Camera Monitor Pilot
+
+on:
+  push:
+    branches: [camera-monitor-pilot]
+    paths:
+      - 'camera-monitor-pilot/**'
+      - '.github/workflows/build-camera-monitor-pilot.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pilot repo
+        uses: actions/checkout@v4
+        with:
+          path: pilot
+
+      - name: Checkout Sony camera Android engine
+        uses: actions/checkout@v4
+        with:
+          repository: argallo/sony-camera-android
+          ref: main
+          path: sony
+
+      - name: Inject pilot UI
+        run: |
+          cp pilot/camera-monitor-pilot/CameraScreen.kt sony/demo/src/main/java/io/github/gallo/sonycamera/demo/CameraScreen.kt
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Build debug APK
+        working-directory: sony
+        run: |
+          chmod +x gradlew
+          ./gradlew :demo:assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          cp sony/demo/build/outputs/apk/debug/demo-debug.apk Sony-ZVE10-Monitor-Pilot.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sony-ZVE10-Monitor-Pilot
+          path: Sony-ZVE10-Monitor-Pilot.apk
+          if-no-files-found: error
